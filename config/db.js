@@ -11,6 +11,7 @@ const pool = mysql.createPool({
     ssl: {                     // 👈 Thêm khối cấu hình SSL này vào
         rejectUnauthorized: false 
     },
+    charset: 'utf8mb4', // 👈 THÊM DÒNG NÀY ĐỂ HỖ TRỢ TIẾNG VIỆT
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
