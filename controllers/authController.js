@@ -305,12 +305,6 @@ exports.sendOTP = async (req, res) => {
             timestamp: Date.now()
         };
         
-        console.log('=== DEBUG: GỬI OTP ===');
-        console.log('Email:', email);
-        console.log('OTP:', otp);
-        console.log('Timestamp:', new Date().toISOString());
-        console.log('Hết hạn:', new Date(Date.now() + OTP_EXPIRATION).toISOString());
-        
         // Nội dung Email
         const mailOptions = {
             from: `"AI Weather Support" <${EMAIL_USER}>`,
@@ -326,24 +320,11 @@ exports.sendOTP = async (req, res) => {
             `
         };
 
-        console.log('=== DEBUG: CẤU HÌNH EMAIL ===');
-        console.log('SMTP Host:', EMAIL_HOST);
-        console.log('SMTP Port:', EMAIL_PORT);
-        console.log('Email from:', EMAIL_USER);
-        
         // Thực hiện gửi mail với error handling chi tiết
         try {
-            const info = await transporter.sendMail(mailOptions);
-            console.log('=== DEBUG: GỬI EMAIL THÀNH CÔNG ===');
-            console.log('Message ID:', info.messageId);
-            console.log('Response:', info.response);
+            await transporter.sendMail(mailOptions);
             res.status(200).json({ message: "Mã OTP đã được gửi thành công!" });
         } catch (emailError) {
-            console.error('=== DEBUG: LỖI GỬI EMAIL ===');
-            console.error('Error Code:', emailError.code);
-            console.error('Error Message:', emailError.message);
-            console.error('Error Stack:', emailError.stack);
-            
             // Phân loại lỗi để hiển thị thông báo phù hợp
             if (emailError.code === 'ECONNREFUSED') {
                 res.status(500).json({ message: "Không thể kết nối đến mail server. Vui liên hệ quản trị viên!" });
@@ -891,31 +872,20 @@ exports.requestEmailChange = async (req, res) => {
         };
 
         // ============================================================
-        // DEV MODE: In OTP ra terminal thay vì gửi email thật
-        // ============================================================
-        console.log('╔══════════════════════════════════════════════════════╗');
-        console.log('║           🌟 DEV MODE - OTP EMAIL CHANGE            ║');
-        console.log('╠══════════════════════════════════════════════════════╣');
-        console.log('║  Mã OTP đổi email của bạn là: ' + otp + '                 ║');
-        console.log('║  Email mới: ' + newEmail.padEnd(35) + '║');
-        console.log('║  Hết hạn sau: 5 phút                               ║');
-        console.log('╚══════════════════════════════════════════════════════╝');
-        
-        // Trả response thành công (DEV MODE - không gửi email thật)
-        res.status(200).json({ 
-            success: true, 
-            message: "Mã OTP đã được gửi đến email mới của bạn!" 
-        });
-        
-        /* 
-        // ============================================================
-        // PRODUCTION MODE: Gửi email thật (uncomment để bật)
+        // PRODUCTION MODE: Gửi email thật
         // ============================================================
         const mailOptions = {
             from: `"AI Weather Support" <${EMAIL_USER}>`,
             to: newEmail,
             subject: "Mã xác thực thay đổi email - AI Weather",
-            html: `...`
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                    <h2>Xác thực thay đổi email AI Weather</h2>
+                    <p>Chào bạn, mã OTP để thay đổi email của bạn là:</p>
+                    <h1 style="color: #a855f7; font-size: 32px; letter-spacing: 5px;">${otp}</h1>
+                    <p>Mã này có hiệu lực trong 5 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>
+                </div>
+            `
         };
         
         try {
@@ -924,7 +894,6 @@ exports.requestEmailChange = async (req, res) => {
         } catch (emailError) {
             res.status(500).json({ success: false, message: "Không thể gửi email. Vui lòng thử lại sau!" });
         }
-        */
         
     } catch (error) {
         console.error("Request Email Change Error:", error);
@@ -975,10 +944,6 @@ exports.verifyEmailChange = async (req, res) => {
         
         // Xóa OTP sau khi sử dụng thành công
         delete otpStore[otpKey];
-        
-        console.log('=== DEBUG: THAY ĐỔI EMAIL THÀNH CÔNG ===');
-        console.log('User ID:', userId);
-        console.log('Email mới:', newEmail);
         
         res.status(200).json({ 
             success: true, 

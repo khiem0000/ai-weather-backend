@@ -6,9 +6,37 @@ const db = require('./config/db');
 
 const app = express();
 
-// Cấu hình CORS cho phép requests từ Live Server và các port khác
+// Cấu hình CORS cho phép requests từ production domain
+// Thay đổi origin thành domain thật khi deploy
+const allowedOrigins = [
+    'http://127.0.0.1:5500', 
+    'http://localhost:5500', 
+    'http://localhost:3000', 
+    'http://127.0.0.1:3000',
+    // Thêm production domains vào đây khi deploy
+    // 'https://your-production-domain.com'
+];
+
+// Kiểm tra nếu có biến môi trường CORS_ORIGIN thì sử dụng
+if (process.env.CORS_ORIGIN) {
+    process.env.CORS_ORIGIN.split(',').forEach(origin => {
+        if (origin.trim()) allowedOrigins.push(origin.trim());
+    });
+}
+
 app.use(cors({
-    origin: ['http://127.0.0.1:5500', 'http://localhost:5500', 'http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: function(origin, callback) {
+        // Cho phép requests không có origin (như mobile apps, Postman)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) === -1) {
+            // Log nhưng không chặn - có thể bật chế độ strict trong production
+            console.log('CORS request from origin:', origin);
+            // Trong production, uncomment dòng dưới để chặn:
+            // return callback(new Error('Not allowed by CORS'), false);
+        }
+        callback(null, true);
+    },
     credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
