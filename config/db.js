@@ -7,6 +7,10 @@ const pool = mysql.createPool({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
+    port: process.env.DB_PORT, // 👈 Đảm bảo phải có dòng gọi Port này
+    ssl: {                     // 👈 Thêm khối cấu hình SSL này vào
+        rejectUnauthorized: false 
+    },
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
