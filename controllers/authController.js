@@ -74,16 +74,15 @@ async function getLocationFromIP(ip) {
 }
 
 // ============================================================
-// CẤU HÌNH EMAIL/SMTP - SỬ DỤNG GMAIL
+// CẤU HÌNH EMAIL/SMTP - SỬ DỤNG EMAIL PRO
 // ============================================================
-// Sử dụng Gmail với App Password (không dùng mật khẩu Gmail thường)
-// Để tạo App Password: https://myaccount.google.com/apppasswords
-const EMAIL_USER = process.env.EMAIL_USER || 'yourgmail@gmail.com';
-const EMAIL_PASS = process.env.EMAIL_PASS || 'YOUR_APP_PASSWORD_HERE'; // App Password 16 ký tự
-const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
+// Email Pro Configuration: mail92112.maychuemail.com
+const EMAIL_USER = process.env.EMAIL_USER || 'no-reply@aiweather.id.vn';
+const EMAIL_PASS = process.env.EMAIL_PASS || 'khiem0000';
+const EMAIL_HOST = process.env.EMAIL_HOST || 'mail92112.maychuemail.com';
 const EMAIL_PORT = process.env.EMAIL_PORT || 587;
 
-// Cấu hình SMTP Transporter với defaults đảm bảo from luôn được xác định
+// Cấu hình SMTP Transporter với Port 587 và TLS
 const transporter = nodemailer.createTransport({
     host: EMAIL_HOST,
     port: EMAIL_PORT,
@@ -93,7 +92,7 @@ const transporter = nodemailer.createTransport({
         pass: EMAIL_PASS
     },
     tls: {
-        rejectUnauthorized: false // Tránh lỗi chứng chỉ trên localhost
+        rejectUnauthorized: false // Tránh lỗi chứng chỉ trên Render/Production
     },
     // ✅ defaults đảm bảo 'from' luôn được xác định rõ ràng
     defaults: {
