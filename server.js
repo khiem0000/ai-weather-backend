@@ -66,8 +66,11 @@ app.use('/api/chat', chatRoutes);
 const pushCronJobs = require('./services/pushCronJobs');
 pushCronJobs.startCronJobs();
 
-// =========================================================
+app.get('/', (req, res) => {
+    res.status(200).send('Backend AI Weather đang thức 24/24!');
+});
 
+// =========================================================
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: "success", message: "API Server đang hoạt động cực tốt!" });
 });
