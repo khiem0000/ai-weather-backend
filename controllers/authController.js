@@ -1,8 +1,11 @@
 require('dotenv').config(); // ✅ Load dotenv FIRST at the very very top
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const db = require('../config/db');
+
+// Khởi tạo Resend với API Key từ biến môi trường
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ============================================================
 // HELPER: Get device and browser info from request
@@ -74,31 +77,10 @@ async function getLocationFromIP(ip) {
 }
 
 // ============================================================
-// CẤU HÌNH EMAIL/SMTP - SỬ DỤNG EMAIL PRO
+// CẤU HÌNH EMAIL VỚI RESEND API
 // ============================================================
-// Email Pro Configuration: mail92112.maychuemail.com
-const EMAIL_USER = process.env.EMAIL_USER || 'no-reply@aiweather.id.vn';
-const EMAIL_PASS = process.env.EMAIL_PASS || 'khiem0000';
-const EMAIL_HOST = process.env.EMAIL_HOST || 'mail92112.maychuemail.com';
-const EMAIL_PORT = process.env.EMAIL_PORT || 587;
-
-// Cấu hình SMTP Transporter với Port 587 và TLS
-const transporter = nodemailer.createTransport({
-    host: EMAIL_HOST,
-    port: EMAIL_PORT,
-    secure: false, // Sử dụng TLS cho port 587 (không dùng SSL)
-    auth: {
-        user: EMAIL_USER,
-        pass: EMAIL_PASS
-    },
-    tls: {
-        rejectUnauthorized: false // Tránh lỗi chứng chỉ trên Render/Production
-    },
-    // ✅ defaults đảm bảo 'from' luôn được xác định rõ ràng
-    defaults: {
-        from: `"AI Weather Support" <${EMAIL_USER}>`
-    }
-});
+// Resend sử dụng API Key thay vì SMTP
+// From address phải được xác thực trong Resend dashboard
 
 // Đối tượng lưu tạm mã OTP trong bộ nhớ (Để demo nhanh cho đồ án)
 // Trong thực tế nên lưu vào Database kèm thời gian hết hạn
@@ -304,39 +286,30 @@ exports.sendOTP = async (req, res) => {
             timestamp: Date.now()
         };
         
-        // Nội dung Email
-        const mailOptions = {
-            from: `"AI Weather Support" <${EMAIL_USER}>`,
-            to: email,
-            subject: "Mã xác thực OTP đặt lại mật khẩu - AI Weather",
-            html: `
-                <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-                    <h2>Xác thực tài khoản AI Weather</h2>
-                    <p>Chào bạn, mã OTP để đặt lại mật khẩu của bạn là:</p>
-                    <h1 style="color: #a855f7; font-size: 32px; letter-spacing: 5px;">${otp}</h1>
-                    <p>Mã này có hiệu lực trong 5 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>
-                </div>
-            `
-        };
+        // Nội dung Email HTML
+        const emailHtml = `
+            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                <h2>Xác thực tài khoản AI Weather</h2>
+                <p>Chào bạn, mã OTP để đặt lại mật khẩu của bạn là:</p>
+                <h1 style="color: #a855f7; font-size: 32px; letter-spacing: 5px;">${otp}</h1>
+                <p>Mã này có hiệu lực trong 5 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>
+            </div>
+        `;
 
-        // Thực hiện gửi mail với error handling chi tiết
-        try {
-            await transporter.sendMail(mailOptions);
-            res.status(200).json({ message: "Mã OTP đã được gửi thành công!" });
-        } catch (emailError) {
-            // Phân loại lỗi để hiển thị thông báo phù hợp
-            if (emailError.code === 'ECONNREFUSED') {
-                res.status(500).json({ message: "Không thể kết nối đến mail server. Vui liên hệ quản trị viên!" });
-            } else if (emailError.code === 'ETIMEDOUT' || emailError.message.includes('timeout')) {
-                res.status(500).json({ message: "Kết nối mail server quá thời gian. Vui thử lại sau!" });
-            } else if (emailError.code === 'ENOTFOUND') {
-                res.status(500).json({ message: "Không tìm thấy mail server. Vui kiểm tra cấu hình domain!" });
-            } else if (emailError.message.includes('Invalid login') || emailError.message.includes('535')) {
-                res.status(500).json({ message: "Tài khoản email không hợp lệ. Vui kiểm tra lại email/mật khẩu!" });
-            } else {
-                res.status(500).json({ message: "Không thể gửi email. Vui thử lại sau!" });
-            }
+        // Gửi email bằng Resend API
+        const { data, error } = await resend.emails.send({
+            from: '"AI Weather Support" <no-reply@aiweather.id.vn>',
+            to: [email], // Resend yêu cầu mảng (array)
+            subject: "Mã xác thực OTP đặt lại mật khẩu - AI Weather",
+            html: emailHtml
+        });
+
+        if (error) {
+            console.error("Lỗi gửi email Resend:", error);
+            return res.status(500).json({ message: "Lỗi gửi mail: " + error.message });
         }
+
+        res.status(200).json({ message: "Mã OTP đã được gửi thành công!" });
     } catch (error) {
         console.error("Lỗi sendOTP:", error);
         res.status(500).json({ message: "Lỗi Server, vui lòng thử lại sau!" });
@@ -871,29 +844,30 @@ exports.requestEmailChange = async (req, res) => {
         };
 
         // ============================================================
-        // PRODUCTION MODE: Gửi email thật
+        // PRODUCTION MODE: Gửi email bằng Resend API
         // ============================================================
-        const mailOptions = {
-            from: `"AI Weather Support" <${EMAIL_USER}>`,
-            to: newEmail,
+        const emailHtml = `
+            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                <h2>Xác thực thay đổi email AI Weather</h2>
+                <p>Chào bạn, mã OTP để thay đổi email của bạn là:</p>
+                <h1 style="color: #a855f7; font-size: 32px; letter-spacing: 5px;">${otp}</h1>
+                <p>Mã này có hiệu lực trong 5 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>
+            </div>
+        `;
+
+        const { data, error } = await resend.emails.send({
+            from: '"AI Weather Support" <no-reply@aiweather.id.vn>',
+            to: [newEmail], // Resend yêu cầu mảng (array)
             subject: "Mã xác thực thay đổi email - AI Weather",
-            html: `
-                <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-                    <h2>Xác thực thay đổi email AI Weather</h2>
-                    <p>Chào bạn, mã OTP để thay đổi email của bạn là:</p>
-                    <h1 style="color: #a855f7; font-size: 32px; letter-spacing: 5px;">${otp}</h1>
-                    <p>Mã này có hiệu lực trong 5 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>
-                </div>
-            `
-        };
-        
-        try {
-            await transporter.sendMail(mailOptions);
-            res.status(200).json({ success: true, message: "Mã OTP đã được gửi đến email mới của bạn!" });
-        } catch (emailError) {
-            res.status(500).json({ success: false, message: "Không thể gửi email. Vui lòng thử lại sau!" });
+            html: emailHtml
+        });
+
+        if (error) {
+            console.error("Lỗi gửi email Resend:", error);
+            return res.status(500).json({ success: false, message: "Lỗi gửi mail: " + error.message });
         }
-        
+
+        res.status(200).json({ success: true, message: "Mã OTP đã được gửi đến email mới của bạn!" });
     } catch (error) {
         console.error("Request Email Change Error:", error);
         res.status(500).json({ success: false, message: "Lỗi Server!" });
