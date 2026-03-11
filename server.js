@@ -62,6 +62,11 @@ const chatRoutes = require('./routes/chatRoutes');
 app.use('/api/chat', chatRoutes);
 
 // =========================================================
+// ADMIN ROUTES - Hệ thống Quản trị
+const adminRoutes = require('./routes/adminRoutes');
+app.use('/api/admin', adminRoutes);
+
+// =========================================================
 // WEB PUSH CRON JOBS
 const pushCronJobs = require('./services/pushCronJobs');
 pushCronJobs.startCronJobs();
