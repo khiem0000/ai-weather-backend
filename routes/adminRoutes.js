@@ -11,6 +11,7 @@ router.use(authMiddleware, adminMiddleware);
 // Quản lý Users
 router.get('/users', adminController.getAllUsers);
 router.put('/users/:id/lock', adminController.toggleUserLock);
+router.put('/users/:id/role', adminController.changeUserRole);
 
 // Quản lý Hệ thống & API Keys
 router.get('/settings', adminController.getSystemSettings);

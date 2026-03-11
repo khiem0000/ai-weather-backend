@@ -69,3 +69,29 @@ exports.updateSystemSettings = async (req, res) => {
     }
 };
 
+// 5. CẬP NHẬT QUYỀN NGƯỜI DÙNG (ROLE)
+exports.changeUserRole = async (req, res) => {
+    try {
+        const adminId = req.user.id;
+        const targetUserId = req.params.id;
+        const { role } = req.body; // 'user' hoặc 'admin'
+
+        // Kiểm tra dữ liệu đầu vào hợp lệ
+        if (!['user', 'admin'].includes(role)) {
+            return res.status(400).json({ success: false, message: "Quyền không hợp lệ!" });
+        }
+
+        // Không cho phép Admin tự hạ quyền của chính mình (chống tự hủy)
+        if (adminId.toString() === targetUserId.toString() && role === 'user') {
+            return res.status(400).json({ success: false, message: "Bạn không thể tự tước quyền Admin của chính mình!" });
+        }
+
+        await db.query('UPDATE users SET role = ? WHERE id = ?', [role, targetUserId]);
+        
+        res.status(200).json({ success: true, message: `Đã cập nhật quyền thành ${role.toUpperCase()}!` });
+    } catch (error) {
+        console.error("Lỗi changeUserRole:", error);
+        res.status(500).json({ success: false, message: "Lỗi Server!" });
+    }
+};
+
