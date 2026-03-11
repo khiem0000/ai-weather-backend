@@ -66,8 +66,15 @@ app.use('/api/chat', chatRoutes);
 const pushCronJobs = require('./services/pushCronJobs');
 pushCronJobs.startCronJobs();
 
-app.get('/', (req, res) => {
-    res.status(200).send('Backend AI Weather đang thức 24/24!');
+app.get('/', async (req, res) => {
+    try {
+        // Gửi 1 câu lệnh SQL siêu nhẹ để đánh thức MySQL
+        await db.query('SELECT 1'); 
+        res.status(200).send('Backend & Database AI Weather đều đang thức 24/24!');
+    } catch (error) {
+        console.error('❌ Lỗi Database ngủ quên:', error);
+        res.status(500).send('Database mất kết nối rồi!');
+    }
 });
 
 // =========================================================

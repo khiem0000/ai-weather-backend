@@ -1,29 +1,32 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
-// Tạo pool kết nối tới MySQL XAMPP chuẩn bảo mật
-const pool = mysql.createPool({
+// Tạo pool kết nối tới MySQL Aiven Cloud với keep-alive
+const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    port: process.env.DB_PORT, // 👈 Đảm bảo phải có dòng gọi Port này
-    ssl: {                     // 👈 Thêm khối cấu hình SSL này vào
-        rejectUnauthorized: false 
+    port: process.env.DB_PORT || 3306,
+    ssl: {
+        rejectUnauthorized: true
     },
-    charset: 'utf8mb4', // 👈 THÊM DÒNG NÀY ĐỂ HỖ TRỢ TIẾNG VIỆT
+    charset: 'utf8mb4',
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    enableKeepAlive: true,      // GIỮ KẾT NỐI SỐNG
+    keepAliveInitialDelay: 0    // Bắt đầu ngay lập tức
 });
 
-pool.getConnection()
+// Test kết nối
+db.getConnection()
     .then(conn => {
-        console.log('✅ Kết nối thành công tới MySQL (XAMPP)!');
+        console.log('✅ Kết nối thành công tới MySQL (Aiven Cloud)!');
         conn.release();
     })
     .catch(err => {
         console.error('❌ Lỗi kết nối MySQL:', err.message);
     });
 
-module.exports = pool;
+module.exports = db;

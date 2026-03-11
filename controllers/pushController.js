@@ -6,6 +6,7 @@
  * - POST /api/push/subscribe: Lưu subscription từ frontend
  * - DELETE /api/push/unsubscribe: Xóa subscription khỏi DB
  * - GET /api/push/vapidPublicKey: Lấy VAPID Public Key cho frontend
+ * - GET /api/push/test: Test gửi notification (development)
  */
 
 require('dotenv').config();
@@ -23,8 +24,9 @@ const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:admin@aiweather.com';
 
 // Kiểm tra nếu VAPID keys chưa được cấu hình
 if (!vapidPublicKey || !vapidPrivateKey) {
-    console.warn('⚠️ CẢNH BÁO: VAPID Keys chưa được cấu hình trong .env!');
-    console.warn('⚠️ Hãy chạy: node generate-vapid-keys.js');
+    console.error('❌ CRITICAL: VAPID Keys chưa được cấu hình trong .env!');
+    console.error('❌ Vui lòng tạo file .env với VAPID_PUBLIC_KEY và VAPID_PRIVATE_KEY');
+    console.error('❌ Chạy: node generate-vapid-keys.js để tạo keys mới');
 } else {
     // Cấu hình web-push với VAPID keys
     webpush.setVapidDetails(
@@ -33,6 +35,9 @@ if (!vapidPublicKey || !vapidPrivateKey) {
         vapidPrivateKey
     );
     console.log('✅ Web-Push đã được cấu hình với VAPID Keys');
+    
+    // Log first few chars of keys for verification (never log full keys in production!)
+    console.log('📝 VAPID Public Key (first 20 chars):', vapidPublicKey.substring(0, 20) + '...');
 }
 
 // ============================================================
