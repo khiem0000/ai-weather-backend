@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
+const db = require('../config/db');
 
 // Phân luồng 2 đường dẫn cho đăng ký và đăng nhập
 router.post('/register', authController.register);
@@ -36,5 +37,24 @@ router.delete('/tasks/:id', authMiddleware, authController.deleteTask);
 // API Thay đổi Email (Cần xác thực) - Bảo mật với OTP
 router.post('/request-email-change', authMiddleware, authController.requestEmailChange);
 router.post('/verify-email-change', authMiddleware, authController.verifyEmailChange);
+
+// 🛠️ PUBLIC KILL SWITCH API - Real-time Maintenance Mode Check (No Auth Required)
+async function getMaintenanceStatus(req, res) {
+    try {
+        const [settings] = await db.query(
+            'SELECT maintenance_mode FROM system_settings WHERE id = 1'
+        );
+        const maintenance = settings.length > 0 && settings[0].maintenance_mode === 1;
+        res.status(200).json({ 
+            maintenance: maintenance,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('❌ Maintenance status query error:', error);
+        res.status(200).json({ maintenance: false }); // Graceful fallback
+    }
+}
+
+router.get('/status', getMaintenanceStatus);
 
 module.exports = router;
