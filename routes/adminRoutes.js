@@ -12,6 +12,7 @@ router.use(authMiddleware, adminMiddleware);
 router.get('/users', adminController.getAllUsers);
 router.put('/users/:id/lock', adminController.toggleUserLock);
 router.put('/users/:id/role', adminController.changeUserRole);
+router.delete('/users/:id', adminController.deleteUser);
 
 // Quản lý Hệ thống & API Keys
 router.get('/settings', adminController.getSystemSettings);

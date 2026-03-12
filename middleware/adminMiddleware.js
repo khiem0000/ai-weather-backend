@@ -1,4 +1,4 @@
-// File: middleware/adminMiddleware.js
+ // File: middleware/adminMiddleware.js
 const db = require('../config/db');
 
 const adminMiddleware = async (req, res, next) => {

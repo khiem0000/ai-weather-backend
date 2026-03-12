@@ -14,6 +14,27 @@ exports.getAllUsers = async (req, res) => {
     }
 };
 
+// 6. XÓA NGƯỜI DÙNG
+exports.deleteUser = async (req, res) => {
+    try {
+        const adminId = req.user.id;
+        const targetUserId = req.params.id;
+
+        // Chống Admin tự hủy (tự xóa tài khoản của chính mình)
+        if (adminId.toString() === targetUserId.toString()) {
+            return res.status(400).json({ success: false, message: "Bạn không thể tự xóa tài khoản của mình!" });
+        }
+
+        await db.query('DELETE FROM users WHERE id = ?', [targetUserId]);
+        res.status(200).json({ success: true, message: "Đã xóa người dùng thành công!" });
+    } catch (error) {
+        console.error("Lỗi deleteUser:", error);
+        res.status(500).json({ success: false, message: "Lỗi Server!" });
+    }
+};
+
+
+
 // 2. KHÓA / MỞ KHÓA TÀI KHOẢN
 exports.toggleUserLock = async (req, res) => {
     try {
