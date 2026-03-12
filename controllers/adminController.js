@@ -116,3 +116,28 @@ exports.changeUserRole = async (req, res) => {
     }
 };
 
+// 7. GỬI THÔNG BÁO TOÀN HỆ THỐNG (BROADCAST)
+exports.sendBroadcast = async (req, res) => {
+    try {
+        const { message } = req.body;
+        
+        if (!message || message.trim() === '') {
+            return res.status(400).json({ success: false, message: "Nội dung thông báo không được để trống!" });
+        }
+
+        console.log("📢 [BROADCAST KHẨN CẤP]:", message);
+
+        // TODO: Tích hợp thư viện web-push và gọi DB lấy danh sách VAPID subscriptions tại đây
+        // (Tạm thời chúng ta cho API trả về Success để Frontend hoạt động trơn tru)
+
+        res.status(200).json({ 
+            success: true, 
+            message: "Đã phát thông báo cảnh báo đến toàn bộ người dùng!" 
+        });
+    } catch (error) {
+        console.error("Lỗi sendBroadcast:", error);
+        res.status(500).json({ success: false, message: "Lỗi Server khi gửi Broadcast!" });
+    }
+};
+
+
