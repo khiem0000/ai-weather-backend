@@ -141,6 +141,14 @@ exports.login = async (req, res) => {
             return res.status(400).json({ message: "Email hoặc mật khẩu không chính xác!" });
         }
 
+        // Thêm đoạn này: Kiểm tra xem tài khoản có bị khóa không
+        if (user.is_locked === 1) {
+            return res.status(403).json({ 
+                success: false, 
+                message: "ACCOUNT_LOCKED"
+            });
+        }
+
         const token = jwt.sign(
             { id: user.id, email: user.email },
             process.env.JWT_SECRET || 'TranHoangKhiem_SecretKey_2026',
@@ -214,13 +222,21 @@ exports.verifyToken = async (req, res) => {
         const userId = req.user.id;
         
         // Kiểm tra user có tồn tại trong database không
-        const [users] = await db.query('SELECT id, full_name, email, avatar FROM users WHERE id = ?', [userId]);
+        const [users] = await db.query('SELECT id, full_name, email, avatar, is_locked FROM users WHERE id = ?', [userId]);
         
         if (users.length === 0) {
             // User đã bị xóa khỏi database
             return res.status(401).json({ 
                 message: "Tài khoản không tồn tại hoặc đã bị xóa!",
                 valid: false 
+            });
+        }
+        
+        // Kiểm tra tài khoản có bị khóa không
+        if (users[0].is_locked === 1) {
+            return res.status(403).json({ 
+                success: false, 
+                message: "ACCOUNT_LOCKED"
             });
         }
         

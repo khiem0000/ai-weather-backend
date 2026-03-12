@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
+const db = require('../config/db');
 
 // Middleware xác thực JWT token
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
     try {
         // Lấy token từ header
         const authHeader = req.headers.authorization;
@@ -15,6 +16,13 @@ const authMiddleware = (req, res, next) => {
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'TranHoangKhiem_SecretKey_2026');
         
+        // Thêm đoạn này: Đi hỏi DB xem thằng này vừa bị khóa không?
+        const [users] = await db.query('SELECT is_locked FROM users WHERE id = ?', [decoded.id]);
+        
+        if (users.length === 0 || users[0].is_locked === 1) {
+            return res.status(403).json({ success: false, message: "ACCOUNT_LOCKED" });
+        }
+
         // Lưu thông tin user vào request
         req.user = decoded;
         next();
