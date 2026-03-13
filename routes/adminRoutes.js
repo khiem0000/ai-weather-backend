@@ -18,8 +18,5 @@ router.delete('/users/:id', adminController.deleteUser);
 router.get('/settings', adminController.getSystemSettings);
 router.put('/settings', adminController.updateSystemSettings);
 
-// Trạm phát thanh
-router.post('/broadcast', adminController.sendBroadcast);
-
 module.exports = router;
 
