@@ -1,6 +1,16 @@
 // File: controllers/adminController.js
 const db = require('../config/db'); 
 const webpush = require('web-push');
+require('dotenv').config();
+
+// ============================================
+// CẤU HÌNH WEB-PUSH VỚI VAPID KEYS
+// ============================================
+webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:admin@aiweather.id.vn',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+);
 
 // 1. LẤY DANH SÁCH NGƯỜI DÙNG
 exports.getAllUsers = async (req, res) => {
@@ -15,59 +25,31 @@ exports.getAllUsers = async (req, res) => {
     }
 };
 
-// 6. XÓA NGƯỜI DÙNG
-exports.deleteUser = async (req, res) => {
-    try {
-        const adminId = req.user.id;
-        const targetUserId = req.params.id;
-
-        // Chống Admin tự hủy (tự xóa tài khoản của chính mình)
-        if (adminId.toString() === targetUserId.toString()) {
-            return res.status(400).json({ success: false, message: "Bạn không thể tự xóa tài khoản của mình!" });
-        }
-
-        await db.query('DELETE FROM users WHERE id = ?', [targetUserId]);
-        res.status(200).json({ success: true, message: "Đã xóa người dùng thành công!" });
-    } catch (error) {
-        console.error("Lỗi deleteUser:", error);
-        res.status(500).json({ success: false, message: "Lỗi Server!" });
-    }
-};
-
-
-
 // 2. KHÓA / MỞ KHÓA TÀI KHOẢN
 exports.toggleUserLock = async (req, res) => {
     try {
-        const adminId = req.user.id; // ID của admin đang thao tác
-        const targetUserId = req.params.id; // ID của user bị khóa
-        const { is_locked } = req.body; // true (khóa) hoặc false (mở)
+        const adminId = req.user.id;
+        const targetUserId = req.params.id;
+        const { is_locked } = req.body;
 
-        // Không cho phép Admin tự khóa chính mình
         if (adminId.toString() === targetUserId.toString()) {
-            return res.status(400).json({ success: false, message: "Bạn không thể tự khóa tài khoản của chính mình!" });
+            return res.status(400).json({ success: false, message: "Bạn không thể tự khóa mình!" });
         }
 
         await db.query('UPDATE users SET is_locked = ? WHERE id = ?', [is_locked ? 1 : 0, targetUserId]);
-        
-        const statusMsg = is_locked ? "Đã khóa" : "Đã mở khóa";
-        res.status(200).json({ success: true, message: `${statusMsg} tài khoản thành công!` });
+        res.status(200).json({ success: true, message: is_locked ? "Đã khóa" : "Đã mở khóa" });
     } catch (error) {
-        console.error("Lỗi toggleUserLock:", error);
         res.status(500).json({ success: false, message: "Lỗi Server!" });
     }
 };
 
-// 3. LẤY CẤU HÌNH HỆ THỐNG (API KEYS)
+// 3. LẤY CẤU HÌNH HỆ THỐNG
 exports.getSystemSettings = async (req, res) => {
     try {
         const [settings] = await db.query('SELECT maintenance_mode, gemini_api_key, weather_api_key FROM system_settings WHERE id = 1');
-        if (settings.length === 0) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy cấu hình!" });
-        }
+        if (settings.length === 0) return res.status(404).json({ success: false, message: "Không tìm thấy cấu hình!" });
         res.status(200).json({ success: true, settings: settings[0] });
     } catch (error) {
-        console.error("Lỗi getSystemSettings:", error);
         res.status(500).json({ success: false, message: "Lỗi Server!" });
     }
 };
@@ -76,17 +58,12 @@ exports.getSystemSettings = async (req, res) => {
 exports.updateSystemSettings = async (req, res) => {
     try {
         const { maintenance_mode, gemini_api_key, weather_api_key } = req.body;
-
         await db.query(
-            `UPDATE system_settings 
-             SET maintenance_mode = ?, gemini_api_key = ?, weather_api_key = ? 
-             WHERE id = 1`,
+            `UPDATE system_settings SET maintenance_mode = ?, gemini_api_key = ?, weather_api_key = ? WHERE id = 1`,
             [maintenance_mode ? 1 : 0, gemini_api_key, weather_api_key]
         );
-
-        res.status(200).json({ success: true, message: "Cập nhật cấu hình hệ thống thành công!" });
+        res.status(200).json({ success: true, message: "Cập nhật thành công!" });
     } catch (error) {
-        console.error("Lỗi updateSystemSettings:", error);
         res.status(500).json({ success: false, message: "Lỗi Server!" });
     }
 };
@@ -96,50 +73,57 @@ exports.changeUserRole = async (req, res) => {
     try {
         const adminId = req.user.id;
         const targetUserId = req.params.id;
-        const { role } = req.body; // 'user' hoặc 'admin'
-
-        // Kiểm tra dữ liệu đầu vào hợp lệ
-        if (!['user', 'admin'].includes(role)) {
-            return res.status(400).json({ success: false, message: "Quyền không hợp lệ!" });
-        }
-
-        // Không cho phép Admin tự hạ quyền của chính mình (chống tự hủy)
+        const { role } = req.body;
+        if (!['user', 'admin'].includes(role)) return res.status(400).json({ success: false, message: "Quyền không hợp lệ!" });
         if (adminId.toString() === targetUserId.toString() && role === 'user') {
-            return res.status(400).json({ success: false, message: "Bạn không thể tự tước quyền Admin của chính mình!" });
+            return res.status(400).json({ success: false, message: "Không thể tự hạ quyền mình!" });
         }
-
         await db.query('UPDATE users SET role = ? WHERE id = ?', [role, targetUserId]);
-        
         res.status(200).json({ success: true, message: `Đã cập nhật quyền thành ${role.toUpperCase()}!` });
     } catch (error) {
-        console.error("Lỗi changeUserRole:", error);
         res.status(500).json({ success: false, message: "Lỗi Server!" });
     }
 };
 
-// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (UPGRADED)
-// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (Đã Fix chuẩn)
+// 6. XÓA NGƯỜI DÙNG
+exports.deleteUser = async (req, res) => {
+    try {
+        const adminId = req.user.id;
+        const targetUserId = req.params.id;
+        if (adminId.toString() === targetUserId.toString()) {
+            return res.status(400).json({ success: false, message: "Bạn không thể tự xóa tài khoản mình!" });
+        }
+        await db.query('DELETE FROM users WHERE id = ?', [targetUserId]);
+        res.status(200).json({ success: true, message: "Đã xóa người dùng thành công!" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Lỗi Server!" });
+    }
+};
+
+// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (BẢN FIX CHUẨN)
 exports.sendSystemAnnouncement = async (req, res) => {
     try {
         const { message, sendPush } = req.body;
-        
-        if (message === undefined) {
-            return res.status(400).json({ success: false, message: "Thiếu tham số message!" });
+        if (message === undefined) return res.status(400).json({ success: false, message: "Thiếu nội dung!" });
+
+        // A. Cập nhật bảng 'notifications' (Cho Popup trang User)
+        await db.query("DELETE FROM notifications WHERE user_id IS NULL AND type = 'system'");
+        if (message.trim() !== "") {
+            await db.query(
+                "INSERT INTO notifications (title, message, type, created_at) VALUES (?, ?, 'system', NOW())",
+                ["🚨 Thông báo Hệ thống", message]
+            );
         }
 
-        // 1. Lưu message vào Database
-        await db.query("UPDATE system_settings SET announcement = ?", [message]);
+        // B. Cập nhật bảng 'system_settings' (Lưu trạng thái)
+        await db.query("UPDATE system_settings SET announcement = ? WHERE id = 1", [message]);
 
         let pushResult = { success: 0, failed: 0 };
 
-        // 2. NẾU ADMIN CHỌN SEND PUSH -> RUNG MÀN HÌNH
-        if (sendPush && message) {
+        // C. Bắn Push Notification (Rung màn hình khóa)
+        if (sendPush && message.trim() !== "") {
             try {
-                // Lấy tất cả user đã đăng ký
-                const [subscriptions] = await db.query(
-                    "SELECT endpoint, p256dh, auth FROM push_subscriptions"
-                );
-                
+                const [subscriptions] = await db.query("SELECT endpoint, p256dh, auth FROM push_subscriptions");
                 const payload = JSON.stringify({
                     title: "🚨 Thông báo Khẩn cấp",
                     body: message,
@@ -147,35 +131,29 @@ exports.sendSystemAnnouncement = async (req, res) => {
                     url: "/"
                 });
 
-                // Bắn súng liên thanh Push
                 for (const sub of subscriptions) {
-                    const pushConfig = {
-                        endpoint: sub.endpoint,
-                        keys: { auth: sub.auth, p256dh: sub.p256dh }
-                    };
                     try {
-                        await webpush.sendNotification(pushConfig, payload);
+                        await webpush.sendNotification(
+                            { endpoint: sub.endpoint, keys: { auth: sub.auth, p256dh: sub.p256dh } }, 
+                            payload
+                        );
                         pushResult.success++;
                     } catch (e) {
                         pushResult.failed++;
                     }
                 }
-            } catch (error) {
-                console.error("❌ Lỗi hệ thống Push:", error);
+            } catch (err) {
+                console.error("Lỗi hệ thống Push:", err);
             }
         }
 
         res.status(200).json({ 
             success: true, 
             message: message ? '✅ Đã phát sóng thành công!' : '🗑️ Đã gỡ thông báo!',
-            pushResult,
-            notification: { message: message }
+            pushResult
         });
     } catch (error) {
         console.error("❌ Lỗi sendSystemAnnouncement:", error);
         res.status(500).json({ success: false, message: "Lỗi Server!" });
     }
 };
-
-
-
