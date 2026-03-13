@@ -12,6 +12,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
+const adminController = require('../controllers/adminController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 // ============================================================
 // GET /api/notifications/system
@@ -58,6 +60,12 @@ router.get('/system', async (req, res) => {
         });
     }
 });
+
+// ============================================================
+// POST /api/notifications/system (NEW)
+// Admin gửi thông báo hệ thống + optional push notification
+// ============================================================
+router.post('/system', authMiddleware, adminController.sendSystemAnnouncement);
 
 module.exports = router;
 

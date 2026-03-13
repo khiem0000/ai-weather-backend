@@ -116,28 +116,77 @@ exports.changeUserRole = async (req, res) => {
     }
 };
 
-// 7. GỬI THÔNG BÁO TOÀN HỆ THỐNG (BROADCAST)
-exports.sendBroadcast = async (req, res) => {
+// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (UPGRADED)
+exports.sendSystemAnnouncement = async (req, res) => {
     try {
-        const { message } = req.body;
+        const { message, sendPush } = req.body;
         
-        if (!message || message.trim() === '') {
-            return res.status(400).json({ success: false, message: "Nội dung thông báo không được để trống!" });
+        if (message === undefined) {
+            return res.status(400).json({ success: false, message: "Thiếu tham số message!" });
         }
 
-        console.log("📢 [BROADCAST KHẨN CẤP]:", message);
+        console.log("📢 [SYSTEM ANNOUNCEMENT]:", { message, sendPush });
 
-        // TODO: Tích hợp thư viện web-push và gọi DB lấy danh sách VAPID subscriptions tại đây
-        // (Tạm thời chúng ta cho API trả về Success để Frontend hoạt động trơn tru)
+        // 1. Lưu message vào Database (để hiển thị Popup trong Web)
+        // Sử dụng system_settings.announcement thay vì table notifications để đơn giản
+        await db.query("UPDATE system_settings SET announcement = ?", [message]);
 
+        let pushResult = { success: 0, failed: 0, expired: 0 };
+
+        // 2. NẾU ADMIN CHỌN SEND PUSH -> KÍCH HOẠT RUNG MÀN HÌNH KHÓA
+        if (sendPush && message) {
+            try {
+                // Lấy tất cả user đã đăng ký nhận thông báo
+                const [subscriptions] = await db.query(
+                    "SELECT endpoint, p256dh, auth FROM push_subscriptions"
+                );
+                
+                // Gói hàng Push Notification
+                const payload = JSON.stringify({
+                    title: "🚨 Thông báo Khẩn cấp",
+                    body: message,
+                    type: "severe",
+                    url: "/" // Khi user bấm vào thông báo sẽ mở trang chủ
+                });
+
+                // Bắn súng liên thanh tới Google/Apple Push Servers
+                for (const sub of subscriptions) {
+                    const pushConfig = {
+                        endpoint: sub.endpoint,
+                        keys: { auth: sub.auth, p256dh: sub.p256dh }
+                    };
+                    const result = await pushController.sendPushNotification(pushConfig, payload);
+                    
+                    if (result === true) {
+                        pushResult.success++;
+                    } else if (result === 'expired') {
+                        pushResult.expired++;
+                    } else {
+                        pushResult.failed++;
+                    }
+                }
+                
+                console.log(`📊 Push Results: ${pushResult.success} success, ${pushResult.failed} failed, ${pushResult.expired} expired`);
+                
+            } catch (error) {
+                console.error("❌ Lỗi hệ thống Push:", error);
+                pushResult.error = error.message;
+            }
+        }
+
+        const responseMessage = message ? '✅ Đã phát sóng thành công!' : '🗑️ Đã gỡ thông báo!';
+        
         res.status(200).json({ 
             success: true, 
-            message: "Đã phát thông báo cảnh báo đến toàn bộ người dùng!" 
+            message: responseMessage,
+            pushResult,
+            notification: { message: message }
         });
     } catch (error) {
-        console.error("Lỗi sendBroadcast:", error);
-        res.status(500).json({ success: false, message: "Lỗi Server khi gửi Broadcast!" });
+        console.error("❌ Lỗi sendSystemAnnouncement:", error);
+        res.status(500).json({ success: false, message: "Lỗi Server!" });
     }
 };
+
 
 
