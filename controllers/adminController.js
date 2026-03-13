@@ -1,5 +1,5 @@
 // File: controllers/adminController.js
-const db = require('../config/db');
+const db = require('../config/db');\nconst pushController = require('../controllers/pushController');
 
 // 1. LẤY DANH SÁCH NGƯỜI DÙNG
 exports.getAllUsers = async (req, res) => {
