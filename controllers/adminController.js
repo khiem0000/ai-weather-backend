@@ -1,5 +1,6 @@
 // File: controllers/adminController.js
-const db = require('../config/db'); const pushController = require('../controllers/pushController');
+const db = require('../config/db'); 
+const webpush = require('web-push');
 
 // 1. LẤY DANH SÁCH NGƯỜI DÙNG
 exports.getAllUsers = async (req, res) => {
@@ -117,6 +118,7 @@ exports.changeUserRole = async (req, res) => {
 };
 
 // 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (UPGRADED)
+// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (Đã Fix chuẩn)
 exports.sendSystemAnnouncement = async (req, res) => {
     try {
         const { message, sendPush } = req.body;
@@ -125,60 +127,47 @@ exports.sendSystemAnnouncement = async (req, res) => {
             return res.status(400).json({ success: false, message: "Thiếu tham số message!" });
         }
 
-        console.log("📢 [SYSTEM ANNOUNCEMENT]:", { message, sendPush });
-
-        // 1. Lưu message vào Database (để hiển thị Popup trong Web)
-        // Sử dụng system_settings.announcement thay vì table notifications để đơn giản
+        // 1. Lưu message vào Database
         await db.query("UPDATE system_settings SET announcement = ?", [message]);
 
-        let pushResult = { success: 0, failed: 0, expired: 0 };
+        let pushResult = { success: 0, failed: 0 };
 
-        // 2. NẾU ADMIN CHỌN SEND PUSH -> KÍCH HOẠT RUNG MÀN HÌNH KHÓA
+        // 2. NẾU ADMIN CHỌN SEND PUSH -> RUNG MÀN HÌNH
         if (sendPush && message) {
             try {
-                // Lấy tất cả user đã đăng ký nhận thông báo
+                // Lấy tất cả user đã đăng ký
                 const [subscriptions] = await db.query(
                     "SELECT endpoint, p256dh, auth FROM push_subscriptions"
                 );
                 
-                // Gói hàng Push Notification
                 const payload = JSON.stringify({
                     title: "🚨 Thông báo Khẩn cấp",
                     body: message,
                     type: "severe",
-                    url: "/" // Khi user bấm vào thông báo sẽ mở trang chủ
+                    url: "/"
                 });
 
-                // Bắn súng liên thanh tới Google/Apple Push Servers
+                // Bắn súng liên thanh Push
                 for (const sub of subscriptions) {
                     const pushConfig = {
                         endpoint: sub.endpoint,
                         keys: { auth: sub.auth, p256dh: sub.p256dh }
                     };
-                    const result = await pushController.sendPushNotification(pushConfig, payload);
-                    
-                    if (result === true) {
+                    try {
+                        await webpush.sendNotification(pushConfig, payload);
                         pushResult.success++;
-                    } else if (result === 'expired') {
-                        pushResult.expired++;
-                    } else {
+                    } catch (e) {
                         pushResult.failed++;
                     }
                 }
-                
-                console.log(`📊 Push Results: ${pushResult.success} success, ${pushResult.failed} failed, ${pushResult.expired} expired`);
-                
             } catch (error) {
                 console.error("❌ Lỗi hệ thống Push:", error);
-                pushResult.error = error.message;
             }
         }
 
-        const responseMessage = message ? '✅ Đã phát sóng thành công!' : '🗑️ Đã gỡ thông báo!';
-        
         res.status(200).json({ 
             success: true, 
-            message: responseMessage,
+            message: message ? '✅ Đã phát sóng thành công!' : '🗑️ Đã gỡ thông báo!',
             pushResult,
             notification: { message: message }
         });
