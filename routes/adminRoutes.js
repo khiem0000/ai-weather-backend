@@ -18,5 +18,9 @@ router.delete('/users/:id', adminController.deleteUser);
 router.get('/settings', adminController.getSystemSettings);
 router.put('/settings', adminController.updateSystemSettings);
 
+// Analytics & Log APIs
+router.post('/log-api', adminController.logFrontendApi);
+router.get('/analytics', adminController.getAnalyticsData);
+
 module.exports = router;
 

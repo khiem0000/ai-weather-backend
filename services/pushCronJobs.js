@@ -10,6 +10,7 @@ require('dotenv').config();
 const cron = require('node-cron');
 const db = require('../config/db');
 const pushController = require('../controllers/pushController');
+const { logApiUsage } = require('../helpers/apiLogger');
 
 // Cấu hình Weather API
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY || 'd96db3ca494c4a359b8135749260103';
@@ -25,19 +26,43 @@ const WEATHER_API_URL = 'https://api.weatherapi.com/v1';
  * @returns {Object|null} - Dữ liệu thời tiết hoặc null nếu lỗi
  */
 async function fetchWeatherData(city) {
+    const startTime = Date.now();
     try {
         const response = await fetch(
             `${WEATHER_API_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(city)}&days=1&aqi=no&lang=vi`
         );
         
+        const responseTime = Date.now() - startTime;
         if (!response.ok) {
+            await logApiUsage({ 
+                apiName: 'WeatherAPI', 
+                statusCode: response.status || 500, 
+                responseTimeMs: responseTime, 
+                location: city,
+                errorMessage: `HTTP ${response.status}`
+            });
             console.error(`❌ Lỗi API thời tiết: ${response.status}`);
             return null;
         }
         
+        await logApiUsage({ 
+            apiName: 'WeatherAPI', 
+            statusCode: 200, 
+            responseTimeMs: responseTime, 
+            location: city 
+        });
+        
         const data = await response.json();
         return data;
     } catch (error) {
+        const responseTime = Date.now() - startTime;
+        await logApiUsage({ 
+            apiName: 'WeatherAPI', 
+            statusCode: 500, 
+            responseTimeMs: responseTime, 
+            location: city,
+            errorMessage: error.message 
+        });
         console.error('❌ Lỗi fetchWeatherData:', error.message);
         return null;
     }

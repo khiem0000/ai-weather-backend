@@ -1,5 +1,6 @@
 // File: controllers/adminController.js
 const db = require('../config/db'); 
+const { logApiUsage } = require('../helpers/apiLogger');
 const webpush = require('web-push');
 require('dotenv').config();
 
@@ -117,6 +118,91 @@ exports.sendSystemAnnouncement = async (req, res) => {
     } catch (error) {
         console.error("❌ Lỗi Backend:", error);
         res.status(500).json({ success: false, message: "Lỗi Server nội bộ!" });
+    }
+};
+
+// 8. LOG FRONTEND API CALLS (cho OpenWeatherMap từ Frontend)
+exports.logFrontendApi = async (req, res) => {
+    try {
+        const { apiName, statusCode, responseTimeMs, location, errorMessage } = req.body;
+        if (!apiName) {
+            return res.status(400).json({ success: false, message: "Thiếu apiName" });
+        }
+        await logApiUsage({ 
+            userId: null, 
+            apiName, 
+            statusCode: parseInt(statusCode) || 500, 
+            responseTimeMs: parseInt(responseTimeMs) || 0, 
+            location: location || 'Unknown', 
+            errorMessage 
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Lỗi logFrontendApi:", error);
+        res.status(500).json({ success: false });
+    }
+};
+
+// 9. GET ANALYTICS DATA cho Dashboard
+exports.getAnalyticsData = async (req, res) => {
+    try {
+        // Today only
+        const today = new Date().toISOString().split('T')[0];
+        
+        const [totalRow] = await db.query('SELECT COUNT(*) as total FROM api_logs WHERE DATE(created_at) = ?', [today]);
+        const totalRequests = totalRow[0].total;
+
+        const [successRow] = await db.query('SELECT COUNT(*) as success FROM api_logs WHERE status_code = 200 AND DATE(created_at) = ?', [today]);
+        const successRate = totalRequests > 0 ? ((successRow[0].success / totalRequests) * 100).toFixed(2) : 0;
+
+        const [avgRow] = await db.query('SELECT AVG(response_time_ms) as avg FROM api_logs WHERE DATE(created_at) = ?', [today]);
+        const avgLatency = avgRow[0].avg ? Math.round(avgRow[0].avg) : 0;
+
+        // Hourly traffic by API (today)
+        const [traffic] = await db.query(`
+            SELECT 
+                HOUR(created_at) as hour,
+                api_name,
+                COUNT(*) as count
+            FROM api_logs 
+            WHERE DATE(created_at) = ? 
+            GROUP BY HOUR(created_at), api_name 
+            ORDER BY hour, count DESC
+        `, [today]);
+
+        // Top locations
+        const [locations] = await db.query(`
+            SELECT location, COUNT(*) as count 
+            FROM api_logs 
+            WHERE DATE(created_at) = ? 
+            GROUP BY location 
+            ORDER BY count DESC 
+            LIMIT 5
+        `, [today]);
+
+        // Recent errors
+        const [errors] = await db.query(`
+            SELECT api_name, status_code, response_time_ms, location, error_message, created_at 
+            FROM api_logs 
+            WHERE status_code != 200 AND DATE(created_at) = ? 
+            ORDER BY created_at DESC 
+            LIMIT 5
+        `, [today]);
+
+        res.json({ 
+            success: true,
+            data: {
+                totalRequests,
+                successRate: parseFloat(successRate),
+                avgLatency,
+                apiTraffic: traffic,
+                topLocations: locations,
+                recentErrors: errors
+            }
+        });
+    } catch (error) {
+        console.error("Lỗi getAnalyticsData:", error);
+        res.status(500).json({ success: false, message: "Lỗi truy vấn analytics" });
     }
 };
 

@@ -1,6 +1,7 @@
 // File: controllers/chatController.js
 const { GoogleGenAI } = require("@google/genai");
 const db = require('../config/db');
+const { logApiUsage } = require('../helpers/apiLogger');
 
 const ai = new GoogleGenAI({});
 
@@ -35,6 +36,8 @@ async function handleChat(req, res) {
             return res.json({ success: true, reply: "Tôi không thấy dữ liệu thời tiết. Hãy tìm kiếm thành phố trước nhé!" });
         }
 
+        const startTime = Date.now();
+
         const prompt = `LUẬT CỦA BẠN: 
         1. Tên bạn là "khiewcokk AI" - trợ lý thời tiết của ứng dụng AI Weather.
         2. CHỈ trả lời về thời tiết và tính năng app. Từ chối câu hỏi ngoài lề.
@@ -48,9 +51,26 @@ async function handleChat(req, res) {
             contents: prompt,
         });
 
+        const responseTime = Date.now() - startTime;
+        await logApiUsage({ 
+            userId: req.user?.id, 
+            apiName: 'Gemini', 
+            statusCode: 200, 
+            responseTimeMs: responseTime, 
+            location: weatherContext.name 
+        });
         return res.json({ success: true, reply: response.text });
 
     } catch (error) {
+        const responseTime = Date.now() - startTime;
+        await logApiUsage({ 
+            userId: req.user?.id, 
+            apiName: 'Gemini', 
+            statusCode: 500, 
+            responseTimeMs: responseTime, 
+            location: weatherContext?.name || 'Unknown', 
+            errorMessage: error.message 
+        });
         console.error("❌ Lỗi xử lý Gemini API:", error);
         return res.status(500).json({ success: false, message: "Lỗi kết nối AI. Vui lòng thử lại sau!" });
     }
