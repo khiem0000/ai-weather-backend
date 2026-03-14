@@ -37,7 +37,7 @@ exports.toggleUserLock = async (req, res) => {
 // 3. LẤY CẤU HÌNH HỆ THỐNG
 exports.getSystemSettings = async (req, res) => {
     try {
-        const [settings] = await db.query('SELECT maintenance_mode, gemini_api_key, weather_api_key FROM system_settings WHERE id = 1');
+        const [settings] = await db.query('SELECT maintenance_mode, gemini_api_key, weather_api_key, weatherapi_key FROM system_settings WHERE id = 1');
         if (settings.length === 0) return res.status(404).json({ success: false, message: "Không tìm thấy cấu hình!" });
         res.status(200).json({ success: true, settings: settings[0] });
     } catch (error) { res.status(500).json({ success: false }); }
@@ -46,8 +46,8 @@ exports.getSystemSettings = async (req, res) => {
 // 4. CẬP NHẬT CẤU HÌNH HỆ THỐNG
 exports.updateSystemSettings = async (req, res) => {
     try {
-        const { maintenance_mode, gemini_api_key, weather_api_key } = req.body;
-        await db.query(`UPDATE system_settings SET maintenance_mode = ?, gemini_api_key = ?, weather_api_key = ? WHERE id = 1`, [maintenance_mode ? 1 : 0, gemini_api_key, weather_api_key]);
+        const { maintenance_mode, gemini_api_key, weather_api_key, weatherapi_key } = req.body;
+        await db.query(`UPDATE system_settings SET gemini_api_key = ?, weather_api_key = ?, weatherapi_key = ?, maintenance_mode = ? WHERE id = 1`, [gemini_api_key, weather_api_key, weatherapi_key, maintenance_mode ? 1 : 0]);
         res.status(200).json({ success: true, message: "Cập nhật thành công!" });
     } catch (error) { res.status(500).json({ success: false }); }
 };
