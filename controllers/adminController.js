@@ -126,15 +126,14 @@ exports.sendSystemAnnouncement = async (req, res) => {
 // ============================================================
 exports.logFrontendApi = async (req, res) => {
     try {
-        const { userId, apiName, statusCode, responseTimeMs, location, errorMessage } = req.body;
+        const { userId, apiName, statusCode, responseTimeMs, errorMessage } = req.body;
         const { logApiUsage } = require('../helpers/apiLogger');
         
         await logApiUsage({
-            userId: userId || null, // Đã bóc user_id từ Frontend gửi lên
+            userId: userId || null,
             apiName: apiName || 'Unknown API',
             statusCode: statusCode || 200,
             responseTimeMs: responseTimeMs || 0,
-            location: location || 'Unknown',
             errorMessage: errorMessage || null
         });
         
@@ -196,18 +195,14 @@ exports.getAnalyticsData = async (req, res) => {
             else if (name.includes('gemini')) gemini[idx] = row.count;
         });
 
-        // 5. Lấy Top Locations (LỌC BỎ Unknown VÀ CÁC TỌA ĐỘ GPS BẰNG REGEXP)
-        const [topLocations] = await db.query(`
-            SELECT location as name, COUNT(*) as count 
+        // 5. Bảng xếp hạng Hiệu suất API (Tốc độ phản hồi trung bình)
+        const [apiPerformance] = await db.query(`
+            SELECT api_name, ROUND(AVG(response_time_ms)) as avg_time 
             FROM api_logs 
-            WHERE ${dateCondition} AND location IS NOT NULL AND location != 'Unknown' AND location NOT REGEXP '^[0-9.-]+,[0-9.-]+$'
-            GROUP BY location ORDER BY count DESC LIMIT 5
+            WHERE ${dateCondition} 
+            GROUP BY api_name 
+            ORDER BY avg_time ASC
         `);
-        
-        const locationsWithPercentage = topLocations.map(loc => ({
-            name: loc.name,
-            percentage: total > 0 ? Math.round((loc.count / total) * 100) : 0
-        }));
 
         // 6. Lấy Lỗi gần đây
         const [recentErrors] = await db.query(`SELECT api_name, status_code, error_message, created_at FROM api_logs WHERE status_code != 200 AND ${dateCondition} ORDER BY created_at DESC LIMIT 5`);
@@ -215,11 +210,18 @@ exports.getAnalyticsData = async (req, res) => {
         res.status(200).json({
             success: true, totalRequests: total, successRate, avgLatency: latency,
             apiTraffic: { labels, openweather, weatherapi, gemini },
-            topLocations: locationsWithPercentage, recentErrors
+            apiPerformance, // Gửi dữ liệu hiệu suất về cho Frontend
+            recentErrors
         });
+    }
+
+        console.error("Lỗi getAnalyticsData:", error);
+        res.status(500).json({ success: false, message: "Lỗi Server" });
     } catch (error) {
         console.error("Lỗi getAnalyticsData:", error);
         res.status(500).json({ success: false, message: "Lỗi Server" });
     }
 };
+
+
 
