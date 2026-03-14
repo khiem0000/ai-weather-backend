@@ -1,16 +1,18 @@
 // File: controllers/adminController.js
 const db = require('../config/db'); 
 const webpush = require('web-push');
-require('dotenv').config(); // Nạp biến môi trường từ file .env
+require('dotenv').config();
 
 // ============================================
-// 🔑 CẤU HÌNH WEB-PUSH (BẮT BUỘC PHẢI CÓ)
+// 🔑 CẤU HÌNH WEB-PUSH
 // ============================================
-webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:admin@aiweather.id.vn',
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-);
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    webpush.setVapidDetails(
+        process.env.VAPID_SUBJECT || 'mailto:admin@aiweather.id.vn',
+        process.env.VAPID_PUBLIC_KEY,
+        process.env.VAPID_PRIVATE_KEY
+    );
+}
 
 // 1. LẤY DANH SÁCH NGƯỜI DÙNG
 exports.getAllUsers = async (req, res) => {
@@ -36,6 +38,7 @@ exports.toggleUserLock = async (req, res) => {
 exports.getSystemSettings = async (req, res) => {
     try {
         const [settings] = await db.query('SELECT maintenance_mode, gemini_api_key, weather_api_key FROM system_settings WHERE id = 1');
+        if (settings.length === 0) return res.status(404).json({ success: false, message: "Không tìm thấy cấu hình!" });
         res.status(200).json({ success: true, settings: settings[0] });
     } catch (error) { res.status(500).json({ success: false }); }
 };
@@ -49,7 +52,7 @@ exports.updateSystemSettings = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false }); }
 };
 
-// 5. CẬP NHẬT QUYỀN (ROLE)
+// 5. CẬP NHẬT QUYỀN
 exports.changeUserRole = async (req, res) => {
     try {
         const adminId = req.user.id;
@@ -72,7 +75,7 @@ exports.deleteUser = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false }); }
 };
 
-// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (BẢN FIX TRIỆT ĐỂ)
+// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (ĐÃ XÓA LOGIC LỖI)
 exports.sendSystemAnnouncement = async (req, res) => {
     try {
         const { message, sendPush } = req.body;
@@ -83,7 +86,8 @@ exports.sendSystemAnnouncement = async (req, res) => {
         if (message.trim() !== "") {
             await db.query("INSERT INTO notifications (title, message, type, created_at) VALUES (?, ?, 'system', NOW())", ["🚨 Thông báo Hệ thống", message]);
         }
-        await db.query("UPDATE system_settings SET announcement = ? WHERE id = 1", [message]);
+        
+        // ĐÃ XÓA DÒNG UPDATE system_settings GÂY LỖI 500 Ở ĐÂY
 
         let pushResult = { success: 0, failed: 0 };
 
