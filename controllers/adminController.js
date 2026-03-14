@@ -121,22 +121,24 @@ exports.sendSystemAnnouncement = async (req, res) => {
     }
 };
 
-// 8. LOG FRONTEND API CALLS (cho OpenWeatherMap từ Frontend)
+// ============================================================
+// API: NHẬN LOG TỪ FRONTEND (ĐÃ SỬA NHẬN USER ID)
+// ============================================================
 exports.logFrontendApi = async (req, res) => {
     try {
-        const { apiName, statusCode, responseTimeMs, location, errorMessage } = req.body;
-        if (!apiName) {
-            return res.status(400).json({ success: false, message: "Thiếu apiName" });
-        }
-        await logApiUsage({ 
-            userId: null, 
-            apiName, 
-            statusCode: parseInt(statusCode) || 500, 
-            responseTimeMs: parseInt(responseTimeMs) || 0, 
-            location: location || 'Unknown', 
-            errorMessage 
+        const { userId, apiName, statusCode, responseTimeMs, location, errorMessage } = req.body;
+        const { logApiUsage } = require('../helpers/apiLogger');
+        
+        await logApiUsage({
+            userId: userId || null, // Đã bóc user_id từ Frontend gửi lên
+            apiName: apiName || 'Unknown API',
+            statusCode: statusCode || 200,
+            responseTimeMs: responseTimeMs || 0,
+            location: location || 'Unknown',
+            errorMessage: errorMessage || null
         });
-        res.json({ success: true });
+        
+        res.status(200).json({ success: true });
     } catch (error) {
         console.error("Lỗi logFrontendApi:", error);
         res.status(500).json({ success: false });
@@ -145,46 +147,41 @@ exports.logFrontendApi = async (req, res) => {
 
 // 9. GET ANALYTICS DATA cho Dashboard
 // ============================================================
-// API: THỐNG KÊ ANALYTICS (FIXED BỞI GEMINI)
+// API: THỐNG KÊ ANALYTICS (SIÊU AN TOÀN - CHỐNG CRASH & LỌC TỌA ĐỘ)
 // ============================================================
 exports.getAnalyticsData = async (req, res) => {
     try {
         const range = req.query.range || 'today';
         let dateCondition = 'DATE(created_at) = CURDATE()';
         
-        if (range === '7days') {
-            dateCondition = 'created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
-        } else if (range === '30days') {
-            dateCondition = 'created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
-        }
+        if (range === '7days') dateCondition = 'created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
+        if (range === '30days') dateCondition = 'created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
 
-        // 1. Lấy tổng số request
-        const [[{ totalRequests }]] = await db.query(`SELECT COUNT(*) as totalRequests FROM api_logs WHERE ${dateCondition}`);
+        // 1 & 2 & 3. Dùng 1 Query gộp để lấy Total, Success và Avg Latency (Chống crash)
+        const [stats] = await db.query(`
+            SELECT 
+                COUNT(*) as totalRequests,
+                SUM(CASE WHEN status_code = 200 THEN 1 ELSE 0 END) as successCount,
+                ROUND(AVG(response_time_ms)) as avgLatency
+            FROM api_logs 
+            WHERE ${dateCondition}
+        `);
         
-        // 2. Tính tỉ lệ thành công
-        const [[{ successCount }]] = await db.query(`SELECT COUNT(*) as successCount FROM api_logs WHERE status_code = 200 AND ${dateCondition}`);
-        const successRate = totalRequests > 0 ? Math.round((successCount / totalRequests) * 100) : 0;
+        const total = stats[0].totalRequests || 0;
+        const success = stats[0].successCount || 0;
+        const latency = stats[0].avgLatency || 0;
+        const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
 
-        // 3. Tính độ trễ trung bình
-        const [[{ avgLatency }]] = await db.query(`SELECT ROUND(AVG(response_time_ms)) as avgLatency FROM api_logs WHERE ${dateCondition}`);
-
-        // 4. Lấy dữ liệu Biểu đồ Traffic (Nhóm theo giờ hoặc theo ngày)
-        let trafficQuery = '';
-        if (range === 'today') {
-            trafficQuery = `SELECT HOUR(created_at) as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY HOUR(created_at), api_name ORDER BY time_unit ASC`;
-        } else {
-            trafficQuery = `SELECT DATE_FORMAT(created_at, '%m-%d') as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY DATE(created_at), api_name ORDER BY DATE(created_at) ASC`;
-        }
+        // 4. Lấy dữ liệu Biểu đồ Traffic
+        let trafficQuery = range === 'today' 
+            ? `SELECT HOUR(created_at) as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY HOUR(created_at), api_name ORDER BY time_unit ASC`
+            : `SELECT DATE_FORMAT(created_at, '%m-%d') as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY DATE(created_at), api_name ORDER BY DATE(created_at) ASC`;
         
         const [trafficData] = await db.query(trafficQuery);
         
-        // Xử lý dữ liệu thô thành mảng cho Chart.js
         const labelsSet = new Set();
-        trafficData.forEach(row => {
-            let label = range === 'today' ? `${String(row.time_unit).padStart(2, '0')}:00` : row.time_unit;
-            labelsSet.add(label);
-        });
-        const labels = Array.from(labelsSet).sort(); // Sắp xếp thời gian tăng dần
+        trafficData.forEach(row => labelsSet.add(range === 'today' ? `${String(row.time_unit).padStart(2, '0')}:00` : row.time_unit));
+        const labels = Array.from(labelsSet).sort();
         
         const openweather = new Array(labels.length).fill(0);
         const weatherapi = new Array(labels.length).fill(0);
@@ -192,57 +189,37 @@ exports.getAnalyticsData = async (req, res) => {
         
         trafficData.forEach(row => {
             let label = range === 'today' ? `${String(row.time_unit).padStart(2, '0')}:00` : row.time_unit;
-            let index = labels.indexOf(label);
-            let name = row.api_name.toLowerCase();
-            
-            if (name.includes('openweather')) openweather[index] = row.count;
-            else if (name.includes('weatherapi')) weatherapi[index] = row.count;
-            else if (name.includes('gemini')) gemini[index] = row.count;
+            let idx = labels.indexOf(label);
+            let name = (row.api_name || '').toLowerCase();
+            if (name.includes('openweather')) openweather[idx] = row.count;
+            else if (name.includes('weatherapi')) weatherapi[idx] = row.count;
+            else if (name.includes('gemini')) gemini[idx] = row.count;
         });
 
-        // 5. Lấy Top Locations
+        // 5. Lấy Top Locations (LỌC BỎ Unknown VÀ CÁC TỌA ĐỘ GPS BẰNG REGEXP)
         const [topLocations] = await db.query(`
             SELECT location as name, COUNT(*) as count 
             FROM api_logs 
-            WHERE ${dateCondition} AND location IS NOT NULL AND location != 'Unknown'
-            GROUP BY location 
-            ORDER BY count DESC 
-            LIMIT 5
+            WHERE ${dateCondition} AND location IS NOT NULL AND location != 'Unknown' AND location NOT REGEXP '^[0-9.-]+,[0-9.-]+$'
+            GROUP BY location ORDER BY count DESC LIMIT 5
         `);
         
         const locationsWithPercentage = topLocations.map(loc => ({
             name: loc.name,
-            percentage: totalRequests > 0 ? Math.round((loc.count / totalRequests) * 100) : 0
+            percentage: total > 0 ? Math.round((loc.count / total) * 100) : 0
         }));
 
         // 6. Lấy Lỗi gần đây
-        const [recentErrors] = await db.query(`
-            SELECT api_name, status_code, error_message, created_at 
-            FROM api_logs 
-            WHERE status_code != 200 AND ${dateCondition} 
-            ORDER BY created_at DESC 
-            LIMIT 5
-        `);
+        const [recentErrors] = await db.query(`SELECT api_name, status_code, error_message, created_at FROM api_logs WHERE status_code != 200 AND ${dateCondition} ORDER BY created_at DESC LIMIT 5`);
 
-        // Trả về JSON đúng chuẩn cho Frontend
         res.status(200).json({
-            success: true,
-            totalRequests: totalRequests || 0,
-            successRate: successRate || 0,
-            avgLatency: avgLatency || 0,
-            apiTraffic: {
-                labels,
-                openweather,
-                weatherapi,
-                gemini
-            },
-            topLocations: locationsWithPercentage,
-            recentErrors
+            success: true, totalRequests: total, successRate, avgLatency: latency,
+            apiTraffic: { labels, openweather, weatherapi, gemini },
+            topLocations: locationsWithPercentage, recentErrors
         });
-        
     } catch (error) {
         console.error("Lỗi getAnalyticsData:", error);
-        res.status(500).json({ success: false, message: "Lỗi Server nội bộ" });
+        res.status(500).json({ success: false, message: "Lỗi Server" });
     }
 };
 
