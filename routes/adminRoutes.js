@@ -5,13 +5,15 @@ const adminController = require('../controllers/adminController');
 const authMiddleware = require('../middleware/authMiddleware');
 const adminMiddleware = require('../middleware/adminMiddleware');
 
-// Áp dụng Cận vệ: Khách phải Đăng nhập (auth) VÀ phải là Admin (admin)
-router.use(authMiddleware, adminMiddleware);
-
-// Public API Log (no auth required)
+// ========================================================
+// 1. API PUBLIC (Không cần quyền Admin)
+// Phải đặt Ở ĐÂY, TRƯỚC KHI gọi router.use(...)
+// ========================================================
 router.post('/log-api', adminController.logFrontendApi);
 
-// Protected Admin Routes (auth + admin required)
+// ========================================================
+// 2. BỨC TƯỜNG BẢO VỆ (Từ dòng này trở xuống phải là Admin)
+// ========================================================
 router.use(authMiddleware, adminMiddleware);
 
 // Quản lý Users
@@ -28,4 +30,3 @@ router.put('/settings', adminController.updateSystemSettings);
 router.get('/analytics', adminController.getAnalyticsData);
 
 module.exports = router;
-
