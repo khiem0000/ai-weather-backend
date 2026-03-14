@@ -146,59 +146,73 @@ exports.logFrontendApi = async (req, res) => {
 // 9. GET ANALYTICS DATA cho Dashboard
 exports.getAnalyticsData = async (req, res) => {
     try {
-        // Today only
-        const today = new Date().toISOString().split('T')[0];
-        
-        const [totalRow] = await db.query('SELECT COUNT(*) as total FROM api_logs WHERE DATE(created_at) = ?', [today]);
-        const totalRequests = totalRow[0].total;
+        const range = req.query.range || 'today';
+        let dateFilter;
+        switch(range) {
+            case 'today': dateFilter = "DATE(created_at) = CURDATE()"; break;
+            case '7days': dateFilter = "created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"; break;
+            case '30days': dateFilter = "created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"; break;
+            default: dateFilter = "DATE(created_at) = CURDATE()";
+        }
 
-        const [successRow] = await db.query('SELECT COUNT(*) as success FROM api_logs WHERE status_code = 200 AND DATE(created_at) = ?', [today]);
-        const successRate = totalRequests > 0 ? ((successRow[0].success / totalRequests) * 100).toFixed(2) : 0;
+        // Total requests
+        const [totalRow] = await db.query(`SELECT COUNT(*) as total FROM api_logs WHERE ${dateFilter}`);
+        const totalRequests = parseInt(totalRow[0].total) || 0;
 
-        const [avgRow] = await db.query('SELECT AVG(response_time_ms) as avg FROM api_logs WHERE DATE(created_at) = ?', [today]);
+        // Success rate
+        const [successRow] = await db.query(`SELECT COUNT(*) as success FROM api_logs WHERE status_code = 200 AND ${dateFilter}`);
+        const successCount = parseInt(successRow[0].success) || 0;
+        const successRate = totalRequests > 0 ? parseFloat(((successCount / totalRequests) * 100).toFixed(2)) : 0;
+
+        // Avg latency
+        const [avgRow] = await db.query(`SELECT AVG(response_time_ms) as avg FROM api_logs WHERE ${dateFilter}`);
         const avgLatency = avgRow[0].avg ? Math.round(avgRow[0].avg) : 0;
 
-        // Hourly traffic by API (today)
-        const [traffic] = await db.query(`
+        // Top locations with percentage
+        const [locationsRaw] = await db.query(`SELECT location, COUNT(*) as count FROM api_logs WHERE ${dateFilter} GROUP BY location ORDER BY count DESC LIMIT 5`);
+        const topLocations = locationsRaw.map(loc => ({
+            name: loc.location || 'Unknown',
+            percentage: totalRequests > 0 ? parseInt((loc.count / totalRequests * 100)) : 0
+        }));
+
+        // Recent errors (last 5)
+        const [recentErrors] = await db.query(`SELECT api_name, status_code, response_time_ms, location, error_message, created_at FROM api_logs WHERE status_code != 200 AND ${dateFilter} ORDER BY created_at DESC LIMIT 5`);
+
+        // API Traffic for Chart.js (hourly, only relevant APIs)
+        const labels = Array.from({length: 24}, (_, i) => `${i.toString().padStart(2, '0')}:00`);
+        const apis = ['openweather', 'weatherapi', 'gemini'];
+        const apiData = {};
+        apis.forEach(api => apiData[api] = new Array(24).fill(0));
+
+        const [trafficRaw] = await db.query(`
             SELECT 
                 HOUR(created_at) as hour,
                 api_name,
                 COUNT(*) as count
             FROM api_logs 
-            WHERE DATE(created_at) = ? 
-            GROUP BY HOUR(created_at), api_name 
-            ORDER BY hour, count DESC
-        `, [today]);
+            WHERE ${dateFilter} AND api_name IN ('openweather', 'weatherapi', 'gemini')
+            GROUP BY HOUR(created_at), api_name
+        `);
 
-        // Top locations
-        const [locations] = await db.query(`
-            SELECT location, COUNT(*) as count 
-            FROM api_logs 
-            WHERE DATE(created_at) = ? 
-            GROUP BY location 
-            ORDER BY count DESC 
-            LIMIT 5
-        `, [today]);
-
-        // Recent errors
-        const [errors] = await db.query(`
-            SELECT api_name, status_code, response_time_ms, location, error_message, created_at 
-            FROM api_logs 
-            WHERE status_code != 200 AND DATE(created_at) = ? 
-            ORDER BY created_at DESC 
-            LIMIT 5
-        `, [today]);
-
-        res.json({ 
-            success: true,
-            data: {
-                totalRequests,
-                successRate: parseFloat(successRate),
-                avgLatency,
-                apiTraffic: traffic,
-                topLocations: locations,
-                recentErrors: errors
+        trafficRaw.forEach(row => {
+            if (apiData[row.api_name] && row.hour >= 0 && row.hour < 24) {
+                apiData[row.api_name][row.hour] = row.count;
             }
+        });
+
+        const apiTraffic = {
+            labels,
+            ...apiData
+        };
+
+        res.json({
+            success: true,
+            totalRequests,
+            successRate,
+            avgLatency,
+            apiTraffic,
+            topLocations,
+            recentErrors
         });
     } catch (error) {
         console.error("Lỗi getAnalyticsData:", error);
