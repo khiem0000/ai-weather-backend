@@ -76,7 +76,7 @@ exports.deleteUser = async (req, res) => {
     } catch (error) { res.status(500).json({ success: false }); }
 };
 
-// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION (ĐÃ XÓA LOGIC LỖI)
+// 7. GỬI THÔNG BÁO HỆ THỐNG + PUSH NOTIFICATION
 exports.sendSystemAnnouncement = async (req, res) => {
     try {
         const { message, sendPush } = req.body;
@@ -88,8 +88,6 @@ exports.sendSystemAnnouncement = async (req, res) => {
             await db.query("INSERT INTO notifications (title, message, type, created_at) VALUES (?, ?, 'system', NOW())", ["🚨 Thông báo Hệ thống", message]);
         }
         
-        // ĐÃ XÓA DÒNG UPDATE system_settings GÂY LỖI 500 Ở ĐÂY
-
         let pushResult = { success: 0, failed: 0 };
 
         // B. Bắn Push Notification lên màn hình khóa
@@ -122,7 +120,7 @@ exports.sendSystemAnnouncement = async (req, res) => {
 };
 
 // ============================================================
-// API: NHẬN LOG TỪ FRONTEND (ĐÃ SỬA NHẬN USER ID)
+// API: NHẬN LOG TỪ FRONTEND
 // ============================================================
 exports.logFrontendApi = async (req, res) => {
     try {
@@ -156,7 +154,7 @@ exports.getAnalyticsData = async (req, res) => {
         if (range === '7days') dateCondition = 'created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
         if (range === '30days') dateCondition = 'created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
 
-        // 1 & 2 & 3. Dùng 1 Query gộp để lấy Total, Success và Avg Latency (Chống crash)
+        // 1 & 2 & 3. Dùng 1 Query gộp để lấy Total, Success và Avg Latency
         const [stats] = await db.query(`
             SELECT 
                 COUNT(*) as totalRequests,
@@ -213,15 +211,8 @@ exports.getAnalyticsData = async (req, res) => {
             apiPerformance, // Gửi dữ liệu hiệu suất về cho Frontend
             recentErrors
         });
-    }
-
-        console.error("Lỗi getAnalyticsData:", error);
-        res.status(500).json({ success: false, message: "Lỗi Server" });
     } catch (error) {
         console.error("Lỗi getAnalyticsData:", error);
         res.status(500).json({ success: false, message: "Lỗi Server" });
     }
 };
-
-
-
