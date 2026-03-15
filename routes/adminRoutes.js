@@ -10,6 +10,7 @@ const adminMiddleware = require('../middleware/adminMiddleware');
 // Phải đặt Ở ĐÂY, TRƯỚC KHI gọi router.use(...)
 // ========================================================
 router.post('/log-api', adminController.logFrontendApi);
+router.post('/support', adminController.submitSupportTicket); // 👉 THÊM DÒNG NÀY (Nhận thư từ User)
 
 // ========================================================
 // 2. BỨC TƯỜNG BẢO VỆ (Từ dòng này trở xuống phải là Admin)
@@ -29,4 +30,11 @@ router.put('/settings', adminController.updateSystemSettings);
 // Analytics
 router.get('/analytics', adminController.getAnalyticsData);
 
+// 👉 THÊM KHỐI CODE QUẢN LÝ THƯ HỖ TRỢ NÀY VÀO CUỐI FILE:
+router.get('/support', adminController.getSupportTickets);
+router.get('/support/:id', adminController.getTicketDetails);
+router.put('/support/:id/resolve', adminController.resolveTicket);
+router.put('/support/:id/reply', adminController.replySupportTicket);
+
 module.exports = router;
+

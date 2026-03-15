@@ -252,3 +252,108 @@ exports.getAnalyticsData = async (req, res) => {
         res.status(500).json({ success: false, message: "Lỗi Server" });
     }
 };
+
+// ============================================================
+// API: HỆ THỐNG HỖ TRỢ NGƯỜI DÙNG (SUPPORT TICKETS)
+// ============================================================
+
+// 10. (PUBLIC) User gửi thư hỗ trợ
+exports.submitSupportTicket = async (req, res) => {
+    try {
+        const { userId, email, title, message, image1, image2, image3 } = req.body;
+
+        if (!email || !title || !message) {
+            return res.status(400).json({ success: false, message: "Vui lòng nhập đầy đủ email, tiêu đề và nội dung!" });
+        }
+
+        await db.query(
+            `INSERT INTO support_tickets (user_id, email, title, message, image1, image2, image3)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [userId || null, email, title, message, image1 || null, image2 || null, image3 || null]
+        );
+
+        res.status(200).json({ success: true, message: "Đã gửi yêu cầu hỗ trợ thành công!" });
+    } catch (error) {
+        console.error("Lỗi submitSupportTicket:", error);
+        res.status(500).json({ success: false, message: "Lỗi Server khi gửi thư!" });
+    }
+};
+
+// 11. (ADMIN) Lấy danh sách thư (Không load ảnh để tránh giật lag)
+exports.getSupportTickets = async (req, res) => {
+    try {
+        const [tickets] = await db.query(`
+            SELECT id, user_id, email, title, message, status, DATE_ADD(created_at, INTERVAL 7 HOUR) as created_at
+            FROM support_tickets
+            ORDER BY created_at DESC
+        `);
+        res.status(200).json({ success: true, tickets });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Lỗi tải danh sách thư!" });
+    }
+};
+
+// 12. (ADMIN) Lấy chi tiết 1 bức thư (bao gồm load 3 ảnh Base64)
+exports.getTicketDetails = async (req, res) => {
+    try {
+        const [ticket] = await db.query(`
+            SELECT id, user_id, email, title, message, image1, image2, image3, status, DATE_ADD(created_at, INTERVAL 7 HOUR) as created_at
+            FROM support_tickets WHERE id = ?
+        `, [req.params.id]);
+
+        if (ticket.length === 0) return res.status(404).json({ success: false, message: "Không tìm thấy thư!" });
+        res.status(200).json({ success: true, ticket: ticket[0] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Lỗi tải chi tiết thư!" });
+    }
+};
+
+// 13. (ADMIN) Đánh dấu đã xử lý xong (Resolved)
+exports.resolveTicket = async (req, res) => {
+    try {
+        await db.query('UPDATE support_tickets SET status = "resolved" WHERE id = ?', [req.params.id]);
+        res.status(200).json({ success: true, message: "Đã đánh dấu xử lý xong!" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Lỗi cập nhật trạng thái!" });
+    }
+};
+
+// 14. (ADMIN) Gửi phản hồi cho User & Đánh dấu hoàn thành
+exports.replySupportTicket = async (req, res) => {
+    try {
+        const ticketId = req.params.id;
+        const { replyMessage } = req.body;
+
+        if (!replyMessage) {
+            return res.status(400).json({ success: false, message: "Nội dung phản hồi không được để trống!" });
+        }
+
+        // 1. Lưu câu trả lời của Admin và đổi trạng thái thành resolved (Đã giải quyết)
+        await db.query(`
+            UPDATE support_tickets 
+            SET admin_reply = ?, 
+                replied_at = DATE_ADD(NOW(), INTERVAL 7 HOUR), 
+                status = 'resolved'
+            WHERE id = ?
+        `, [replyMessage, ticketId]);
+
+        // 2. (TÍNH NĂNG VIP): Bắn thông báo vào quả chuông của User
+        const [ticketInfo] = await db.query("SELECT user_id, title FROM support_tickets WHERE id = ?", [ticketId]);
+        
+        if (ticketInfo.length > 0 && ticketInfo[0].user_id) {
+            const notifTitle = "Thư hỗ trợ đã được phản hồi!";
+            const notifMsg = `Admin đã trả lời yêu cầu: "${ticketInfo[0].title}". Vui lòng kiểm tra email hoặc mục hỗ trợ.`;
+            
+            await db.query(`
+                INSERT INTO notifications (user_id, title, message, type, created_at) 
+                VALUES (?, ?, ?, 'system', DATE_ADD(NOW(), INTERVAL 7 HOUR))
+            `, [ticketInfo[0].user_id, notifTitle, notifMsg]);
+        }
+
+        res.status(200).json({ success: true, message: "Đã gửi phản hồi thành công!" });
+    } catch (error) {
+        console.error("Lỗi replySupportTicket:", error);
+        res.status(500).json({ success: false, message: "Lỗi Server khi gửi phản hồi!" });
+    }
+};
+
