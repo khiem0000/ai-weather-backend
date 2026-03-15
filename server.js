@@ -87,6 +87,22 @@ app.get('/api/health', (req, res) => {
     res.status(200).json({ status: "success", message: "API Server đang hoạt động cực tốt!" });
 });
 
+// ==========================================
+// CƠ CHẾ DỌN RÁC TỰ ĐỘNG (AUTO-CLEANUP LOGS)
+// ==========================================
+
+// Cứ mỗi 12 tiếng, Server sẽ tự động thức dậy và xóa sạch các log cũ hơn 7 ngày
+setInterval(async () => {
+    try {
+        console.log("🧹 Bắt đầu dọn dẹp dữ liệu log cũ...");
+        // Chỉ giữ lại log của 7 ngày gần nhất để xem Analytics, còn lại xóa hết!
+        const [result] = await db.query(`DELETE FROM api_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)`);
+        console.log(`✅ Đã xóa ${result.affectedRows} dòng log rác! Giải phóng dung lượng thành công.`);
+    } catch (error) {
+        console.error("❌ Lỗi dọn rác:", error);
+    }
+}, 12 * 60 * 60 * 1000); // 12 giờ x 60 phút x 60 giây x 1000ms
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Server Backend đang chạy tại http://localhost:${PORT}`);

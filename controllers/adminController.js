@@ -4,6 +4,8 @@ const { logApiUsage } = require('../helpers/apiLogger');
 const webpush = require('web-push');
 require('dotenv').config();
 
+const os = require('os');
+
 // ============================================
 // 🔑 CẤU HÌNH WEB-PUSH
 // ============================================
@@ -178,7 +180,7 @@ exports.getAnalyticsData = async (req, res) => {
         `);
         const activeSessionsCount = activeUsers[0].activeSessions || 0;
 
-        // 5. Lấy dữ liệu Biểu đồ Traffic (Đã ép đủ 24 giờ)
+        // 5. Lấy dữ liệu Biểu đồ Traffic (Đã ép chuẩn giờ Quốc tế 00:00 - 23:00)
         let trafficQuery = range === 'today' 
             ? `SELECT HOUR(created_at) as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY HOUR(created_at), api_name ORDER BY time_unit ASC`
             : `SELECT DATE_FORMAT(created_at, '%m-%d') as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY DATE(created_at), api_name ORDER BY DATE(created_at) ASC`;
@@ -187,8 +189,10 @@ exports.getAnalyticsData = async (req, res) => {
         
         let labels = [];
         if (range === 'today') {
-            // Tạo sẵn 24 mốc giờ để biểu đồ luôn hiện đường kẻ ngang dù chỉ có 1 điểm
-            for(let i=0; i<24; i++) labels.push(`${String(i).padStart(2, '0')}:00`);
+            // ĐÃ FIX: Chạy từ 0 đến 23 để ra đúng chuẩn 00:00 đến 23:00
+            for (let i = 0; i <= 23; i++) {
+                labels.push(`${String(i).padStart(2, '0')}:00`);
+            }
         } else {
             const labelsSet = new Set();
             trafficData.forEach(row => labelsSet.add(row.time_unit));
@@ -216,13 +220,43 @@ exports.getAnalyticsData = async (req, res) => {
         // 7. Lấy Lỗi gần đây
         const [recentErrors] = await db.query(`SELECT api_name, status_code, error_message, created_at FROM api_logs WHERE status_code != 200 AND ${dateCondition} ORDER BY created_at DESC LIMIT 5`);
 
+        // ==========================================
+        // ĐO NHỊP TIM MÁY CHỦ (SYSTEM HEALTH)
+        // ==========================================
+        // 1. Tính toán RAM (Memory)
+        const totalMem = os.totalmem();
+        const freeMem = os.freemem();
+        const usedMem = totalMem - freeMem;
+        const memoryUsedGB = (usedMem / 1024 / 1024 / 1024).toFixed(2); // Đổi ra GB
+
+        // 2. Tính toán CPU (Dựa trên Load Average của Render/Linux)
+        const cpus = os.cpus().length;
+        // Lấy mức tải trung bình 1 phút, chia cho số lõi CPU để ra phần trăm
+        let cpuLoad = Math.round((os.loadavg()[0] / cpus) * 100); 
+        const cpuPercent = cpuLoad > 100 ? 100 : cpuLoad; // Giới hạn max 100%
+
+        // 3. Tính thời gian Server đã sống (Uptime) từ lúc deploy
+        const uptimeSeconds = process.uptime();
+        const hours = Math.floor(uptimeSeconds / 3600);
+        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+        const uptimeString = `${hours}h ${minutes}m`;
+
+        const systemHealth = {
+            cpuPercent: cpuPercent,
+            memoryUsedGB: memoryUsedGB,
+            uptime: uptimeString
+        };
+
         res.status(200).json({
+
             success: true, 
             totalRequests: total, successRate, avgLatency: latency, 
             activeSessions: activeSessionsCount, // Đẩy con số thật về Frontend
             apiTraffic: { labels, openweather, weatherapi, gemini },
-            apiPerformance, recentErrors
+            apiPerformance, recentErrors,
+            systemHealth
         });
+
     } catch (error) {
         console.error("Lỗi getAnalyticsData:", error);
         res.status(500).json({ success: false, message: "Lỗi Server" });
