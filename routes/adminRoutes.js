@@ -11,6 +11,8 @@ const adminMiddleware = require('../middleware/adminMiddleware');
 // ========================================================
 router.post('/log-api', adminController.logFrontendApi);
 router.post('/support', adminController.submitSupportTicket); // 👉 THÊM DÒNG NÀY (Nhận thư từ User)
+router.get('/support/user', adminController.getUserTickets); // 👉 THÊM DÒNG NÀY CHO USER
+
 
 // ========================================================
 // 2. BỨC TƯỜNG BẢO VỆ (Từ dòng này trở xuống phải là Admin)
@@ -35,6 +37,8 @@ router.get('/support', adminController.getSupportTickets);
 router.get('/support/:id', adminController.getTicketDetails);
 router.put('/support/:id/resolve', adminController.resolveTicket);
 router.put('/support/:id/reply', adminController.replySupportTicket);
+router.put('/support/:id/status', adminController.changeTicketStatus); // 👉 THÊM DÒNG NÀY CHO ADMIN
+
 
 module.exports = router;
 
