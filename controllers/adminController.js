@@ -170,16 +170,30 @@ exports.getAnalyticsData = async (req, res) => {
         const latency = stats[0].avgLatency || 0;
         const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
 
-        // 4. Lấy dữ liệu Biểu đồ Traffic
+        // 4. ĐẾM ACTIVE SESSIONS THỰC TẾ (Số User độc lập có gọi API)
+        const [activeUsers] = await db.query(`
+            SELECT COUNT(DISTINCT user_id) as activeSessions 
+            FROM api_logs 
+            WHERE user_id IS NOT NULL AND ${dateCondition}
+        `);
+        const activeSessionsCount = activeUsers[0].activeSessions || 0;
+
+        // 5. Lấy dữ liệu Biểu đồ Traffic (Đã ép đủ 24 giờ)
         let trafficQuery = range === 'today' 
             ? `SELECT HOUR(created_at) as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY HOUR(created_at), api_name ORDER BY time_unit ASC`
             : `SELECT DATE_FORMAT(created_at, '%m-%d') as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY DATE(created_at), api_name ORDER BY DATE(created_at) ASC`;
         
         const [trafficData] = await db.query(trafficQuery);
         
-        const labelsSet = new Set();
-        trafficData.forEach(row => labelsSet.add(range === 'today' ? `${String(row.time_unit).padStart(2, '0')}:00` : row.time_unit));
-        const labels = Array.from(labelsSet).sort();
+        let labels = [];
+        if (range === 'today') {
+            // Tạo sẵn 24 mốc giờ để biểu đồ luôn hiện đường kẻ ngang dù chỉ có 1 điểm
+            for(let i=0; i<24; i++) labels.push(`${String(i).padStart(2, '0')}:00`);
+        } else {
+            const labelsSet = new Set();
+            trafficData.forEach(row => labelsSet.add(row.time_unit));
+            labels = Array.from(labelsSet).sort();
+        }
         
         const openweather = new Array(labels.length).fill(0);
         const weatherapi = new Array(labels.length).fill(0);
@@ -188,32 +202,30 @@ exports.getAnalyticsData = async (req, res) => {
         trafficData.forEach(row => {
             let label = range === 'today' ? `${String(row.time_unit).padStart(2, '0')}:00` : row.time_unit;
             let idx = labels.indexOf(label);
-            let name = (row.api_name || '').toLowerCase();
-            if (name.includes('openweather')) openweather[idx] = row.count;
-            else if (name.includes('weatherapi')) weatherapi[idx] = row.count;
-            else if (name.includes('gemini')) gemini[idx] = row.count;
+            if (idx !== -1) {
+                let name = (row.api_name || '').toLowerCase();
+                if (name.includes('openweather')) openweather[idx] = row.count;
+                else if (name.includes('weatherapi')) weatherapi[idx] = row.count;
+                else if (name.includes('gemini')) gemini[idx] = row.count;
+            }
         });
 
-        // 5. Bảng xếp hạng Hiệu suất API (Tốc độ phản hồi trung bình)
-        const [apiPerformance] = await db.query(`
-            SELECT api_name, ROUND(AVG(response_time_ms)) as avg_time 
-            FROM api_logs 
-            WHERE ${dateCondition} 
-            GROUP BY api_name 
-            ORDER BY avg_time ASC
-        `);
+        // 6. Bảng xếp hạng Hiệu suất API
+        const [apiPerformance] = await db.query(`SELECT api_name, ROUND(AVG(response_time_ms)) as avg_time FROM api_logs WHERE ${dateCondition} GROUP BY api_name ORDER BY avg_time ASC`);
 
-        // 6. Lấy Lỗi gần đây
+        // 7. Lấy Lỗi gần đây
         const [recentErrors] = await db.query(`SELECT api_name, status_code, error_message, created_at FROM api_logs WHERE status_code != 200 AND ${dateCondition} ORDER BY created_at DESC LIMIT 5`);
 
         res.status(200).json({
-            success: true, totalRequests: total, successRate, avgLatency: latency,
+            success: true, 
+            totalRequests: total, successRate, avgLatency: latency, 
+            activeSessions: activeSessionsCount, // Đẩy con số thật về Frontend
             apiTraffic: { labels, openweather, weatherapi, gemini },
-            apiPerformance, // Gửi dữ liệu hiệu suất về cho Frontend
-            recentErrors
+            apiPerformance, recentErrors
         });
     } catch (error) {
         console.error("Lỗi getAnalyticsData:", error);
         res.status(500).json({ success: false, message: "Lỗi Server" });
     }
 };
+
