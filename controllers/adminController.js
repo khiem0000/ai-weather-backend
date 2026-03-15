@@ -3,7 +3,6 @@ const db = require('../config/db');
 const { logApiUsage } = require('../helpers/apiLogger');
 const webpush = require('web-push');
 require('dotenv').config();
-
 const os = require('os');
 
 // ============================================
@@ -84,7 +83,6 @@ exports.sendSystemAnnouncement = async (req, res) => {
         const { message, sendPush } = req.body;
         if (message === undefined) return res.status(400).json({ success: false, message: "Nội dung trống!" });
 
-        // A. Cập nhật SQL cho Popup trong web
         await db.query("DELETE FROM notifications WHERE user_id IS NULL AND type = 'system'");
         if (message.trim() !== "") {
             await db.query("INSERT INTO notifications (title, message, type, created_at) VALUES (?, ?, 'system', NOW())", ["🚨 Thông báo Hệ thống", message]);
@@ -92,7 +90,6 @@ exports.sendSystemAnnouncement = async (req, res) => {
         
         let pushResult = { success: 0, failed: 0 };
 
-        // B. Bắn Push Notification lên màn hình khóa
         if (sendPush && message.trim() !== "") {
             const [subscriptions] = await db.query("SELECT endpoint, p256dh, auth FROM push_subscriptions");
             const payload = JSON.stringify({
@@ -128,8 +125,6 @@ exports.logFrontendApi = async (req, res) => {
     try {
         const { userId, apiName, statusCode, responseTimeMs, errorMessage } = req.body;
         
-        // Đã xóa dòng const { logApiUsage } = require... bị thừa ở đây
-
         await logApiUsage({
             userId: userId || null,
             apiName: apiName || 'Unknown API',
@@ -147,15 +142,17 @@ exports.logFrontendApi = async (req, res) => {
 
 // 9. GET ANALYTICS DATA cho Dashboard
 // ============================================================
-// API: THỐNG KÊ ANALYTICS (SIÊU AN TOÀN - CHỐNG CRASH & LỌC TỌA ĐỘ)
+// API: THỐNG KÊ ANALYTICS (ĐÃ FIX MÚI GIỜ VIỆT NAM +7)
 // ============================================================
 exports.getAnalyticsData = async (req, res) => {
     try {
         const range = req.query.range || 'today';
-        let dateCondition = 'DATE(created_at) = CURDATE()';
         
-        if (range === '7days') dateCondition = 'created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
-        if (range === '30days') dateCondition = 'created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
+        // FIX MÚI GIỜ: Cộng 7 tiếng vào created_at và NOW() để đưa về giờ Việt Nam
+        let dateCondition = 'DATE(DATE_ADD(created_at, INTERVAL 7 HOUR)) = DATE(DATE_ADD(NOW(), INTERVAL 7 HOUR))';
+        
+        if (range === '7days') dateCondition = 'DATE_ADD(created_at, INTERVAL 7 HOUR) >= DATE_SUB(DATE_ADD(NOW(), INTERVAL 7 HOUR), INTERVAL 7 DAY)';
+        if (range === '30days') dateCondition = 'DATE_ADD(created_at, INTERVAL 7 HOUR) >= DATE_SUB(DATE_ADD(NOW(), INTERVAL 7 HOUR), INTERVAL 30 DAY)';
 
         // 1 & 2 & 3. Dùng 1 Query gộp để lấy Total, Success và Avg Latency
         const [stats] = await db.query(`
@@ -172,7 +169,7 @@ exports.getAnalyticsData = async (req, res) => {
         const latency = stats[0].avgLatency || 0;
         const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
 
-        // 4. ĐẾM ACTIVE SESSIONS THỰC TẾ (Số User độc lập có gọi API)
+        // 4. ĐẾM ACTIVE SESSIONS THỰC TẾ
         const [activeUsers] = await db.query(`
             SELECT COUNT(DISTINCT user_id) as activeSessions 
             FROM api_logs 
@@ -180,16 +177,16 @@ exports.getAnalyticsData = async (req, res) => {
         `);
         const activeSessionsCount = activeUsers[0].activeSessions || 0;
 
-        // 5. Lấy dữ liệu Biểu đồ Traffic (Đã ép chuẩn giờ Quốc tế 00:00 - 23:00)
+        // 5. Lấy dữ liệu Biểu đồ Traffic (Đã ép chuẩn giờ Việt Nam +7)
         let trafficQuery = range === 'today' 
-            ? `SELECT HOUR(created_at) as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY HOUR(created_at), api_name ORDER BY time_unit ASC`
-            : `SELECT DATE_FORMAT(created_at, '%m-%d') as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY DATE(created_at), api_name ORDER BY DATE(created_at) ASC`;
+            ? `SELECT HOUR(DATE_ADD(created_at, INTERVAL 7 HOUR)) as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY HOUR(DATE_ADD(created_at, INTERVAL 7 HOUR)), api_name ORDER BY time_unit ASC`
+            : `SELECT DATE_FORMAT(DATE_ADD(created_at, INTERVAL 7 HOUR), '%m-%d') as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY DATE(DATE_ADD(created_at, INTERVAL 7 HOUR)), api_name ORDER BY DATE(DATE_ADD(created_at, INTERVAL 7 HOUR)) ASC`;
         
         const [trafficData] = await db.query(trafficQuery);
         
         let labels = [];
         if (range === 'today') {
-            // ĐÃ FIX: Chạy từ 0 đến 23 để ra đúng chuẩn 00:00 đến 23:00
+            // Đã fix lỗi cú pháp "Asc;" ở đây
             for (let i = 0; i <= 23; i++) {
                 labels.push(`${String(i).padStart(2, '0')}:00`);
             }
@@ -218,24 +215,20 @@ exports.getAnalyticsData = async (req, res) => {
         const [apiPerformance] = await db.query(`SELECT api_name, ROUND(AVG(response_time_ms)) as avg_time FROM api_logs WHERE ${dateCondition} GROUP BY api_name ORDER BY avg_time ASC`);
 
         // 7. Lấy Lỗi gần đây
-        const [recentErrors] = await db.query(`SELECT api_name, status_code, error_message, created_at FROM api_logs WHERE status_code != 200 AND ${dateCondition} ORDER BY created_at DESC LIMIT 5`);
+        const [recentErrors] = await db.query(`SELECT api_name, status_code, error_message, DATE_ADD(created_at, INTERVAL 7 HOUR) as created_at FROM api_logs WHERE status_code != 200 AND ${dateCondition} ORDER BY created_at DESC LIMIT 5`);
 
         // ==========================================
         // ĐO NHỊP TIM MÁY CHỦ (SYSTEM HEALTH)
         // ==========================================
-        // 1. Tính toán RAM (Memory)
         const totalMem = os.totalmem();
         const freeMem = os.freemem();
         const usedMem = totalMem - freeMem;
-        const memoryUsedGB = (usedMem / 1024 / 1024 / 1024).toFixed(2); // Đổi ra GB
+        const memoryUsedGB = (usedMem / 1024 / 1024 / 1024).toFixed(2);
 
-        // 2. Tính toán CPU (Dựa trên Load Average của Render/Linux)
         const cpus = os.cpus().length;
-        // Lấy mức tải trung bình 1 phút, chia cho số lõi CPU để ra phần trăm
         let cpuLoad = Math.round((os.loadavg()[0] / cpus) * 100); 
-        const cpuPercent = cpuLoad > 100 ? 100 : cpuLoad; // Giới hạn max 100%
+        const cpuPercent = cpuLoad > 100 ? 100 : cpuLoad;
 
-        // 3. Tính thời gian Server đã sống (Uptime) từ lúc deploy
         const uptimeSeconds = process.uptime();
         const hours = Math.floor(uptimeSeconds / 3600);
         const minutes = Math.floor((uptimeSeconds % 3600) / 60);
@@ -248,18 +241,14 @@ exports.getAnalyticsData = async (req, res) => {
         };
 
         res.status(200).json({
-
             success: true, 
             totalRequests: total, successRate, avgLatency: latency, 
-            activeSessions: activeSessionsCount, // Đẩy con số thật về Frontend
+            activeSessions: activeSessionsCount, 
             apiTraffic: { labels, openweather, weatherapi, gemini },
-            apiPerformance, recentErrors,
-            systemHealth
+            apiPerformance, recentErrors, systemHealth
         });
-
     } catch (error) {
         console.error("Lỗi getAnalyticsData:", error);
         res.status(500).json({ success: false, message: "Lỗi Server" });
     }
 };
-
