@@ -125,8 +125,9 @@ exports.sendSystemAnnouncement = async (req, res) => {
 exports.logFrontendApi = async (req, res) => {
     try {
         const { userId, apiName, statusCode, responseTimeMs, errorMessage } = req.body;
-        const { logApiUsage } = require('../helpers/apiLogger');
         
+        // Đã xóa dòng const { logApiUsage } = require... bị thừa ở đây
+
         await logApiUsage({
             userId: userId || null,
             apiName: apiName || 'Unknown API',
@@ -138,7 +139,7 @@ exports.logFrontendApi = async (req, res) => {
         res.status(200).json({ success: true });
     } catch (error) {
         console.error("Lỗi logFrontendApi:", error);
-        res.status(500).json({ success: false });
+        res.status(500).json({ success: false, message: "Lỗi lưu log" });
     }
 };
 
