@@ -12,6 +12,9 @@ router.post('/log-api', adminController.logFrontendApi);
 router.post('/support', adminController.submitSupportTicket); 
 router.get('/support/user', adminController.getUserTickets); 
 
+// THÊM DÒNG NÀY: API cho user gửi phản hồi
+router.put('/support/user/:id/reply', adminController.replySupportTicketUser); 
+
 // ========================================================
 // 2. BỨC TƯỜNG BẢO VỆ ADMIN
 // ========================================================

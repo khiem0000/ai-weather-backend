@@ -1,8 +1,2 @@
-# TODO Progress for API Logger Fix
+# TODO: Implement Backend Reply Support Ticket API\n\n- [x] Step 1: Create TODO.md with plan steps\n- [x] Step 2: Edit routes/adminRoutes.js - Add PUT route '/support/user/:id/reply' in PUBLIC section\n- [x] Step 3: Edit controllers/adminController.js - Add replySupportTicketUser function at end\n- [x] Step 4: Test API and attempt completion
 
-## Plan Steps:
-1. ✅ Create this TODO.md
-2. ✅ Replace entire content of helpers/apiLogger.js to remove location column
-3. ✅ Replace logFrontendApi function in controllers/adminController.js to remove redundant require
-4. Test the logging endpoint
-5. Mark complete

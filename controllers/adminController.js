@@ -397,3 +397,36 @@ exports.changeTicketStatus = async (req, res) => {
         res.status(500).json({ success: false, message: "Lỗi cập nhật trạng thái!" });
     }
 };
+
+// 16. (USER) Gửi phản hồi lại cho Admin trong thư đã có
+exports.replySupportTicketUser = async (req, res) => {
+    try {
+        const ticketId = req.params.id;
+        const { replyMessage } = req.body;
+
+        if (!replyMessage) {
+            return res.status(400).json({ success: false, message: "Thiếu nội dung phản hồi!" });
+        }
+
+        // Nối tin nhắn mới vào đoạn message cũ (thêm xuống dòng cho đẹp)
+        // Đồng thời chuyển trạng thái về 'pending' để Admin biết có thư mới cần xử lý
+        const appendText = `\n\n-------------------------\n[BẠN PHẢN HỒI THÊM]:\n${replyMessage}`;
+
+        const [result] = await db.query(
+            `UPDATE support_tickets 
+             SET message = CONCAT(message, ?), status = 'pending' 
+             WHERE id = ?`,
+            [appendText, ticketId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy thư hỗ trợ!" });
+        }
+
+        res.status(200).json({ success: true, message: "Đã gửi phản hồi thành công!" });
+    } catch (error) {
+        console.error("Lỗi replySupportTicketUser:", error);
+        res.status(500).json({ success: false, message: "Lỗi Server khi gửi phản hồi!" });
+    }
+};
+
