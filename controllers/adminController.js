@@ -169,11 +169,12 @@ exports.getAnalyticsData = async (req, res) => {
         const latency = stats[0].avgLatency || 0;
         const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
 
-        // 4. ĐẾM ACTIVE SESSIONS THỰC TẾ
+        // 4. ĐẾM ACTIVE SESSIONS THỰC TẾ (User đang online trong 5 phút vừa qua)
         const [activeUsers] = await db.query(`
             SELECT COUNT(DISTINCT user_id) as activeSessions 
             FROM api_logs 
-            WHERE user_id IS NOT NULL AND ${dateCondition}
+            WHERE user_id IS NOT NULL 
+              AND created_at >= DATE_SUB(DATE_ADD(NOW(), INTERVAL 7 HOUR), INTERVAL 5 MINUTE)
         `);
         const activeSessionsCount = activeUsers[0].activeSessions || 0;
 
@@ -278,7 +279,28 @@ exports.submitSupportTicket = async (req, res) => {
         res.status(500).json({ success: false, message: "Lỗi Server khi gửi thư!" });
     }
 };
+// (PUBLIC) Lấy danh sách thư hỗ trợ của User
+exports.getUserTickets = async (req, res) => {
+    try {
+        const userEmail = req.query.email; 
+        
+        if (!userEmail) {
+            return res.status(400).json({ success: false, message: "Vui lòng cung cấp email để xem lịch sử!" });
+        }
 
+        const [tickets] = await db.query(`
+            SELECT id, title, message, status, admin_reply, DATE_ADD(replied_at, INTERVAL 7 HOUR) as replied_at, DATE_ADD(created_at, INTERVAL 7 HOUR) as created_at 
+            FROM support_tickets 
+            WHERE email = ? 
+            ORDER BY created_at DESC
+        `, [userEmail]);
+
+        res.status(200).json({ success: true, tickets });
+    } catch (error) {
+        console.error("Lỗi getUserTickets:", error);
+        res.status(500).json({ success: false, message: "Lỗi tải lịch sử hỗ trợ!" });
+    }
+};
 // 11. (ADMIN) Lấy danh sách thư (Không load ảnh để tránh giật lag)
 exports.getSupportTickets = async (req, res) => {
     try {
@@ -328,12 +350,12 @@ exports.replySupportTicket = async (req, res) => {
             return res.status(400).json({ success: false, message: "Nội dung phản hồi không được để trống!" });
         }
 
-        // 1. Lưu câu trả lời của Admin và đổi trạng thái thành resolved (Đã giải quyết)
+        // 1. Lưu câu trả lời của Admin và đổi trạng thái thành in_progress (Đang xử lý)
         await db.query(`
             UPDATE support_tickets 
             SET admin_reply = ?, 
                 replied_at = DATE_ADD(NOW(), INTERVAL 7 HOUR), 
-                status = 'resolved'
+                status = 'in_progress'
             WHERE id = ?
         `, [replyMessage, ticketId]);
 
@@ -357,3 +379,21 @@ exports.replySupportTicket = async (req, res) => {
     }
 };
 
+// 15. (ADMIN) Thay đổi trạng thái thư (Đã xử lý / Từ chối)
+exports.changeTicketStatus = async (req, res) => {
+    try {
+        const ticketId = req.params.id;
+        const { status } = req.body;
+
+        // Chỉ chấp nhận 4 trạng thái có trong ENUM MySQL
+        if (!['pending', 'in_progress', 'resolved', 'rejected'].includes(status)) {
+            return res.status(400).json({ success: false, message: "Trạng thái không hợp lệ!" });
+        }
+
+        await db.query('UPDATE support_tickets SET status = ? WHERE id = ?', [status, ticketId]);
+        res.status(200).json({ success: true, message: "Đã cập nhật trạng thái thư!" });
+    } catch (error) {
+        console.error("Lỗi changeTicketStatus:", error);
+        res.status(500).json({ success: false, message: "Lỗi cập nhật trạng thái!" });
+    }
+};
