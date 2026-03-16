@@ -7,15 +7,13 @@ const adminMiddleware = require('../middleware/adminMiddleware');
 
 // ========================================================
 // 1. API PUBLIC (Không cần quyền Admin)
-// Phải đặt Ở ĐÂY, TRƯỚC KHI gọi router.use(...)
 // ========================================================
 router.post('/log-api', adminController.logFrontendApi);
-router.post('/support', adminController.submitSupportTicket); // 👉 THÊM DÒNG NÀY (Nhận thư từ User)
-router.get('/support/user', adminController.getUserTickets); // 👉 THÊM DÒNG NÀY CHO USER
-
+router.post('/support', adminController.submitSupportTicket); 
+router.get('/support/user', adminController.getUserTickets); 
 
 // ========================================================
-// 2. BỨC TƯỜNG BẢO VỆ (Từ dòng này trở xuống phải là Admin)
+// 2. BỨC TƯỜNG BẢO VỆ ADMIN
 // ========================================================
 router.use(authMiddleware, adminMiddleware);
 
@@ -25,20 +23,18 @@ router.put('/users/:id/lock', adminController.toggleUserLock);
 router.put('/users/:id/role', adminController.changeUserRole);
 router.delete('/users/:id', adminController.deleteUser);
 
-// Quản lý Hệ thống & API Keys
+// Quản lý Hệ thống & Cài đặt
 router.get('/settings', adminController.getSystemSettings);
 router.put('/settings', adminController.updateSystemSettings);
 
-// Analytics
+// Thống kê Analytics (Real-time)
 router.get('/analytics', adminController.getAnalyticsData);
 
-// 👉 THÊM KHỐI CODE QUẢN LÝ THƯ HỖ TRỢ NÀY VÀO CUỐI FILE:
+// Quản lý Hộp thư Hỗ trợ (Support Inbox)
 router.get('/support', adminController.getSupportTickets);
 router.get('/support/:id', adminController.getTicketDetails);
 router.put('/support/:id/resolve', adminController.resolveTicket);
 router.put('/support/:id/reply', adminController.replySupportTicket);
-router.put('/support/:id/status', adminController.changeTicketStatus); // 👉 THÊM DÒNG NÀY CHO ADMIN
-
+router.put('/support/:id/status', adminController.changeTicketStatus);
 
 module.exports = router;
-
