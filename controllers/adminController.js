@@ -140,117 +140,111 @@ exports.logFrontendApi = async (req, res) => {
     }
 };
 
-// 9. GET ANALYTICS DATA cho Dashboard
-// ============================================================
-// API: THỐNG KÊ ANALYTICS (ĐÃ FIX MÚI GIỜ VIỆT NAM +7)
-// ============================================================
+// 7. THỐNG KÊ ANALYTICS (Real-time) - FIX LỖI TIMEZONE & ACTIVE SESSIONS
 exports.getAnalyticsData = async (req, res) => {
     try {
-        const range = req.query.range || 'today';
-        
-        // FIX MÚI GIỜ: Cộng 7 tiếng vào created_at và NOW() để đưa về giờ Việt Nam
-        let dateCondition = 'DATE(DATE_ADD(created_at, INTERVAL 7 HOUR)) = DATE(DATE_ADD(NOW(), INTERVAL 7 HOUR))';
-        
-        if (range === '7days') dateCondition = 'DATE_ADD(created_at, INTERVAL 7 HOUR) >= DATE_SUB(DATE_ADD(NOW(), INTERVAL 7 HOUR), INTERVAL 7 DAY)';
-        if (range === '30days') dateCondition = 'DATE_ADD(created_at, INTERVAL 7 HOUR) >= DATE_SUB(DATE_ADD(NOW(), INTERVAL 7 HOUR), INTERVAL 30 DAY)';
+        // BIẾN THỜI GIAN CHUẨN VIỆT NAM (UTC+7) ĐỂ QUERY CHÍNH XÁC
+        const vnTime = `DATE_ADD(NOW(), INTERVAL 7 HOUR)`;
 
-        // 1 & 2 & 3. Dùng 1 Query gộp để lấy Total, Success và Avg Latency
-        const [stats] = await db.query(`
-            SELECT 
-                COUNT(*) as totalRequests,
-                SUM(CASE WHEN status_code = 200 THEN 1 ELSE 0 END) as successCount,
-                ROUND(AVG(response_time_ms)) as avgLatency
-            FROM api_logs 
-            WHERE ${dateCondition}
+        // 1. Total Requests (Hôm nay theo giờ VN)
+        const [totalReq] = await db.query(`SELECT COUNT(*) as total FROM api_logs WHERE DATE(created_at) = DATE(${vnTime})`);
+        const totalRequests = totalReq[0].total || 0;
+
+        // 2. Success Rate
+        const [successReq] = await db.query(`SELECT COUNT(*) as success FROM api_logs WHERE status_code = 200 AND DATE(created_at) = DATE(${vnTime})`);
+        const successRate = totalRequests > 0 ? Math.round((successReq[0].success / totalRequests) * 100) : 0;
+
+        // 3. Avg Latency
+        const [avgLat] = await db.query(`SELECT AVG(response_time_ms) as avg_time FROM api_logs WHERE DATE(created_at) = DATE(${vnTime})`);
+        const avgLatency = avgLat[0].avg_time ? Math.round(avgLat[0].avg_time) : 0;
+
+        // 4. Active Sessions (Fix: Đếm user có ID + Ước lượng Khách vãng lai)
+        const [activeUsers] = await db.query(`SELECT COUNT(DISTINCT user_id) as active FROM api_logs WHERE created_at >= ${vnTime} - INTERVAL 5 MINUTE AND user_id IS NOT NULL`);
+        const [guestReqs] = await db.query(`SELECT COUNT(*) as guest_reqs FROM api_logs WHERE created_at >= ${vnTime} - INTERVAL 5 MINUTE AND user_id IS NULL`);
+        
+        // Tính tổng: Người có tài khoản (Distinct) + Khách (Trung bình 3 request = 1 người)
+        const activeSessions = (activeUsers[0].active || 0) + Math.ceil((guestReqs[0].guest_reqs || 0) / 3);
+
+        // 5. API Traffic (Biểu đồ theo 7 giờ gần nhất)
+        const [traffic] = await db.query(`
+            SELECT HOUR(created_at) as hour, api_name, COUNT(*) as count
+            FROM api_logs
+            WHERE DATE(created_at) = DATE(${vnTime})
+            GROUP BY HOUR(created_at), api_name
+            ORDER BY hour ASC
         `);
-        
-        const total = stats[0].totalRequests || 0;
-        const success = stats[0].successCount || 0;
-        const latency = stats[0].avgLatency || 0;
-        const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
 
-        // 4. ĐẾM ACTIVE SESSIONS THỰC TẾ (User đang online trong 5 phút vừa qua)
-        const [activeUsers] = await db.query(`
-            SELECT COUNT(DISTINCT user_id) as activeSessions 
-            FROM api_logs 
-            WHERE user_id IS NOT NULL 
-              AND created_at >= DATE_SUB(DATE_ADD(NOW(), INTERVAL 7 HOUR), INTERVAL 5 MINUTE)
-        `);
-        const activeSessionsCount = activeUsers[0].activeSessions || 0;
+        // Tính mốc giờ hiện tại ở VN
+        const currentVnDate = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
+        const currentVnHour = currentVnDate.getHours();
+        
+        const labels = [];
+        const openweather = [];
+        const weatherapi = [];
+        const gemini = [];
 
-        // 5. Lấy dữ liệu Biểu đồ Traffic (Đã ép chuẩn giờ Việt Nam +7)
-        let trafficQuery = range === 'today' 
-            ? `SELECT HOUR(DATE_ADD(created_at, INTERVAL 7 HOUR)) as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY HOUR(DATE_ADD(created_at, INTERVAL 7 HOUR)), api_name ORDER BY time_unit ASC`
-            : `SELECT DATE_FORMAT(DATE_ADD(created_at, INTERVAL 7 HOUR), '%m-%d') as time_unit, api_name, COUNT(*) as count FROM api_logs WHERE ${dateCondition} GROUP BY DATE(DATE_ADD(created_at, INTERVAL 7 HOUR)), api_name ORDER BY DATE(DATE_ADD(created_at, INTERVAL 7 HOUR)) ASC`;
-        
-        const [trafficData] = await db.query(trafficQuery);
-        
-        let labels = [];
-        if (range === 'today') {
-            // Đã fix lỗi cú pháp "Asc;" ở đây
-            for (let i = 0; i <= 23; i++) {
-                labels.push(`${String(i).padStart(2, '0')}:00`);
-            }
-        } else {
-            const labelsSet = new Set();
-            trafficData.forEach(row => labelsSet.add(row.time_unit));
-            labels = Array.from(labelsSet).sort();
+        // Lấy 7 mốc giờ gần nhất (từ currentVnHour - 6 đến currentVnHour)
+        for (let i = 6; i >= 0; i--) {
+            let h = currentVnHour - i;
+            if (h < 0) h += 24; // Xử lý lùi giờ khi qua ngày mới (VD: 1h sáng lùi về 20h đêm)
+            
+            labels.push(h + ':00');
+            
+            const ow = traffic.find(t => t.hour === h && t.api_name && t.api_name.toLowerCase().includes('openweather'));
+            const wa = traffic.find(t => t.hour === h && t.api_name && t.api_name.toLowerCase().includes('weatherapi'));
+            const gm = traffic.find(t => t.hour === h && t.api_name && t.api_name.toLowerCase().includes('gemini'));
+
+            openweather.push(ow ? ow.count : 0);
+            weatherapi.push(wa ? wa.count : 0);
+            gemini.push(gm ? gm.count : 0);
         }
-        
-        const openweather = new Array(labels.length).fill(0);
-        const weatherapi = new Array(labels.length).fill(0);
-        const gemini = new Array(labels.length).fill(0);
-        
-        trafficData.forEach(row => {
-            let label = range === 'today' ? `${String(row.time_unit).padStart(2, '0')}:00` : row.time_unit;
-            let idx = labels.indexOf(label);
-            if (idx !== -1) {
-                let name = (row.api_name || '').toLowerCase();
-                if (name.includes('openweather')) openweather[idx] = row.count;
-                else if (name.includes('weatherapi')) weatherapi[idx] = row.count;
-                else if (name.includes('gemini')) gemini[idx] = row.count;
-            }
-        });
 
-        // 6. Bảng xếp hạng Hiệu suất API
-        const [apiPerformance] = await db.query(`SELECT api_name, ROUND(AVG(response_time_ms)) as avg_time FROM api_logs WHERE ${dateCondition} GROUP BY api_name ORDER BY avg_time ASC`);
+        // 6. API Performance
+        const [apiPerf] = await db.query(`
+            SELECT api_name, AVG(response_time_ms) as avg_time
+            FROM api_logs
+            WHERE DATE(created_at) = DATE(${vnTime})
+            GROUP BY api_name
+        `);
 
-        // 7. Lấy Lỗi gần đây
-        const [recentErrors] = await db.query(`SELECT api_name, status_code, error_message, DATE_ADD(created_at, INTERVAL 7 HOUR) as created_at FROM api_logs WHERE status_code != 200 AND ${dateCondition} ORDER BY created_at DESC LIMIT 5`);
+        // 7. Recent Errors
+        const [recentErrors] = await db.query(`
+            SELECT created_at, api_name, status_code, error_message
+            FROM api_logs
+            WHERE status_code >= 400
+            ORDER BY created_at DESC
+            LIMIT 5
+        `);
 
-        // ==========================================
-        // ĐO NHỊP TIM MÁY CHỦ (SYSTEM HEALTH)
-        // ==========================================
+        // 8. System Health
+        const os = require('os');
         const totalMem = os.totalmem();
         const freeMem = os.freemem();
-        const usedMem = totalMem - freeMem;
-        const memoryUsedGB = (usedMem / 1024 / 1024 / 1024).toFixed(2);
-
-        const cpus = os.cpus().length;
-        let cpuLoad = Math.round((os.loadavg()[0] / cpus) * 100); 
-        const cpuPercent = cpuLoad > 100 ? 100 : cpuLoad;
-
-        const uptimeSeconds = process.uptime();
-        const hours = Math.floor(uptimeSeconds / 3600);
-        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-        const uptimeString = `${hours}h ${minutes}m`;
-
-        const systemHealth = {
-            cpuPercent: cpuPercent,
-            memoryUsedGB: memoryUsedGB,
-            uptime: uptimeString
-        };
+        const usedMemGB = ((totalMem - freeMem) / (1024 * 1024 * 1024)).toFixed(2);
+        const cpuUsage = Math.round(os.loadavg()[0] * 100) || 5; 
+        const uptimeHours = Math.floor(os.uptime() / 3600);
+        const uptimeMins = Math.floor((os.uptime() % 3600) / 60);
 
         res.status(200).json({
-            success: true, 
-            totalRequests: total, successRate, avgLatency: latency, 
-            activeSessions: activeSessionsCount, 
+            success: true,
+            totalRequests,
+            successRate,
+            avgLatency,
+            activeSessions,
             apiTraffic: { labels, openweather, weatherapi, gemini },
-            apiPerformance, recentErrors, systemHealth
+            apiPerformance: apiPerf.map(a => ({ api_name: a.api_name, avg_time: Math.round(a.avg_time) })),
+            recentErrors,
+            systemHealth: {
+                cpuPercent: cpuUsage > 100 ? 100 : cpuUsage,
+                memoryUsedGB: usedMemGB,
+                uptime: `${uptimeHours}h ${uptimeMins}m`,
+                avgLatency
+            }
         });
+
     } catch (error) {
-        console.error("Lỗi getAnalyticsData:", error);
-        res.status(500).json({ success: false, message: "Lỗi Server" });
+        console.error("Lỗi Analytics:", error);
+        res.status(500).json({ success: false, message: "Lỗi tải Analytics" });
     }
 };
 
