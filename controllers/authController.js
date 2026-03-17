@@ -222,7 +222,7 @@ exports.verifyToken = async (req, res) => {
         const userId = req.user.id;
         
         // Kiểm tra user có tồn tại trong database không
-        const [users] = await db.query('SELECT id, full_name, email, avatar, is_locked FROM users WHERE id = ?', [userId]);
+        const [users] = await db.query('SELECT id, full_name, email, avatar, role, is_locked FROM users WHERE id = ?', [userId]);
         
         if (users.length === 0) {
             // User đã bị xóa khỏi database
