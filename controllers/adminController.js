@@ -255,16 +255,18 @@ exports.getAnalyticsData = async (req, res) => {
 // 10. (PUBLIC) User gửi thư hỗ trợ
 exports.submitSupportTicket = async (req, res) => {
     try {
-        const { userId, email, title, message, image1, image2, image3 } = req.body;
+        // BƯỚC 1: Nhận thêm biến pin_code từ req.body
+        const { userId, email, title, message, pin_code, image1, image2, image3 } = req.body;
 
         if (!email || !title || !message) {
             return res.status(400).json({ success: false, message: "Vui lòng nhập đầy đủ email, tiêu đề và nội dung!" });
         }
 
+        // BƯỚC 2: Thêm cột pin_code vào lệnh INSERT INTO
         await db.query(
-            `INSERT INTO support_tickets (user_id, email, title, message, image1, image2, image3)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [userId || null, email, title, message, image1 || null, image2 || null, image3 || null]
+            `INSERT INTO support_tickets (user_id, email, title, message, pin_code, image1, image2, image3)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userId || null, email, title, message, pin_code || null, image1 || null, image2 || null, image3 || null]
         );
 
         res.status(200).json({ success: true, message: "Đã gửi yêu cầu hỗ trợ thành công!" });
@@ -273,6 +275,7 @@ exports.submitSupportTicket = async (req, res) => {
         res.status(500).json({ success: false, message: "Lỗi Server khi gửi thư!" });
     }
 };
+
 // (PUBLIC) Lấy danh sách thư hỗ trợ của User
 exports.getUserTickets = async (req, res) => {
     try {
@@ -282,8 +285,11 @@ exports.getUserTickets = async (req, res) => {
             return res.status(400).json({ success: false, message: "Vui lòng cung cấp email để xem lịch sử!" });
         }
 
+        // BƯỚC 3: Select thêm cột pin_code từ Database để Frontend đem ra so sánh
         const [tickets] = await db.query(`
-            SELECT id, title, message, status, admin_reply, DATE_ADD(replied_at, INTERVAL 7 HOUR) as replied_at, DATE_ADD(created_at, INTERVAL 7 HOUR) as created_at 
+            SELECT id, title, message, status, admin_reply, pin_code, 
+                   DATE_ADD(replied_at, INTERVAL 7 HOUR) as replied_at, 
+                   DATE_ADD(created_at, INTERVAL 7 HOUR) as created_at 
             FROM support_tickets 
             WHERE email = ? 
             ORDER BY created_at DESC
