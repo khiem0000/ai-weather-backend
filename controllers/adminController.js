@@ -222,8 +222,8 @@ exports.getAnalyticsData = async (req, res) => {
         const freeMem = os.freemem();
         const usedMemGB = ((totalMem - freeMem) / (1024 * 1024 * 1024)).toFixed(2);
         const cpuUsage = Math.round(os.loadavg()[0] * 100) || 5; 
-        const uptimeHours = Math.floor(os.uptime() / 3600);
-        const uptimeMins = Math.floor((os.uptime() % 3600) / 60);
+        const uptimeHours = Math.floor(process.uptime() / 3600);
+        const uptimeMins = Math.floor((process.uptime() % 3600) / 60);
 
         res.status(200).json({
             success: true,
