@@ -201,6 +201,7 @@ exports.login = async (req, res) => {
                 full_name: user.full_name,
                 email: user.email,
                 avatar: user.avatar,
+                role: user.role,
                 settings: {
                     language: userSettings ? userSettings.language : 'en',
                     tempUnit: userSettings ? userSettings.temp_unit : 'C',
