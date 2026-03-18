@@ -13,8 +13,9 @@ const allowedOrigins = [
     'http://localhost:5500', 
     'http://localhost:3000', 
     'http://127.0.0.1:3000',
-    // Thêm production domains vào đây khi deploy
-    // 'https://your-production-domain.com'
+    // Thêm production domains vào đây:
+    'https://aiweather.id.vn', 
+    'https://admin.aiweather.id.vn' // <--- THÊM Ở ĐÂY LÀ CHUẨN XÁC 100%
 ];
 
 // Kiểm tra nếu có biến môi trường CORS_ORIGIN thì sử dụng
