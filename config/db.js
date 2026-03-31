@@ -1,16 +1,19 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
-// Tạo pool kết nối tới MySQL Aiven Cloud với keep-alive
+// Tạo pool kết nối tới MySQL với cấu hình SSL tự động (Cloud thì bật, Local thì tắt)
 const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     port: process.env.DB_PORT || 3306,
-    ssl: {
+    
+    // Đã sửa: Tự động tắt SSL nếu host là localhost (để chạy XAMPP)
+    ssl: process.env.DB_HOST === 'localhost' ? false : {
         rejectUnauthorized: false
     },
+    
     charset: 'utf8mb4',
     waitForConnections: true,
     connectionLimit: 10,
@@ -22,7 +25,7 @@ const db = mysql.createPool({
 // Test kết nối
 db.getConnection()
     .then(conn => {
-        console.log('✅ Kết nối thành công tới MySQL (Aiven Cloud)!');
+        console.log('✅ Kết nối thành công tới MySQL!');
         conn.release();
     })
     .catch(err => {
